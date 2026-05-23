@@ -18,12 +18,12 @@ class Trap:
         self.x = x
         self.y = y
         self.explosion_damage = 30.0     # 설치기 폭발 데미지: 30
-        self.trigger_radius = 100.0      # 폭발 사거리 반경 100px
+        self.trigger_radius = 130.0      # 폭발 사거리 반경 130px (1280 화면 기준)
         self.cost = 1500                 # 가격 1500원
         self.color = ORANGE
 
         self.is_active = True            # 트랩의 활성화 여부
-        self.radius = 12                 # 시각적 렌더링 반경
+        self.radius = 24                 # 시각적 렌더링 반경 (48px)
         self.timer = 3000                # 3초 뒤에 폭발 (3000ms)
 
     def update(self, enemies, laser_effects, dt=16.667):
@@ -96,9 +96,9 @@ class Trap:
 
         # 3. 텍스트 정보 (남은 초 렌더링)
         try:
-            trap_font = pygame.font.SysFont("malgungothic", 10, bold=True)
+            trap_font = pygame.font.SysFont("malgungothic", 14, bold=True)
         except:
-            trap_font = pygame.font.Font(None, 14)
+            trap_font = pygame.font.Font(None, 18)
 
         sec_left = max(0.0, self.timer / 1000.0)
         time_text = trap_font.render(f"{sec_left:.1f}s", True, (0, 0, 0))
@@ -107,5 +107,5 @@ class Trap:
 
         # 상단 "작성 중" 라벨
         label_text = trap_font.render("논문작성중", True, (255, 255, 255))
-        lbl_rect = label_text.get_rect(center=(self.x, self.y - self.radius - 8))
+        lbl_rect = label_text.get_rect(center=(self.x, self.y - self.radius - 10))
         screen.blit(label_text, lbl_rect)

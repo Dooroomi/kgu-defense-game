@@ -26,8 +26,8 @@ def load_americano_frames():
             for col in range(2):
                 rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
                 frame_img = sheet.subsurface(rect)
-                # 발사체가 눈에 잘 띄도록 24x24로 예쁘게 리사이즈
-                scaled_frame = pygame.transform.scale(frame_img, (24, 24))
+                # 발사체가 눈에 잘 띄도록 32x32로 예쁘게 리사이즈 (1280 화면 기준)
+                scaled_frame = pygame.transform.scale(frame_img, (32, 32))
                 americano_frames.append(scaled_frame)
     except Exception as e:
         print(f"Warning: Failed to load americano.png from {img_path} ({e})")

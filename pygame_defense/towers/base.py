@@ -27,7 +27,7 @@ TIER_COLORS = {
 _tower_frame_cache = {}
 
 # 타워 본체 렌더링 기준 크기 (프레임 이미지를 이 크기로 리사이즈)
-TOWER_SPRITE_SIZE = 36
+TOWER_SPRITE_SIZE = 64
 
 
 def load_tower_frames(asset_key, level):
@@ -101,8 +101,8 @@ class Tower:
     def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.width = 32
-        self.height = 32
+        self.width = 64
+        self.height = 64
         self.rect = pygame.Rect(self.x - self.width // 2, self.y - self.height // 2, self.width, self.height)
 
         # 공통 상태 변수
@@ -276,11 +276,11 @@ class Tower:
         else:
             # 폴백: 색상 사각형 + 타워 이름 첫 글자
             pygame.draw.rect(screen, self.color, self.rect)
-            pygame.draw.rect(screen, (30, 30, 30), self.rect, 2)  # 어두운 테두리
+            pygame.draw.rect(screen, (30, 30, 30), self.rect, 3)  # 어두운 테두리
             try:
-                tower_font = pygame.font.SysFont("malgungothic", 10, bold=True)
+                tower_font = pygame.font.SysFont("malgungothic", 18, bold=True)
             except:
-                tower_font = pygame.font.Font(None, 14)
+                tower_font = pygame.font.Font(None, 24)
             t_label = tower_font.render(self.tower_type[0], True, (0, 0, 0))
             lbl_rect = t_label.get_rect(center=(self.x, self.y))
             screen.blit(t_label, lbl_rect)
@@ -288,15 +288,15 @@ class Tower:
         # 3. 강화 단계 뱃지 (테두리 없이, 타워 우상단 코너 안쪽에 작은 원형 뱃지로 표시)
         #    길(도로)과 겹치지 않도록 타워 영역(rect) 안쪽에 그립니다.
         tier_color = self.get_tier_color()
-        badge_radius = 8
+        badge_radius = 13
         badge_center = (self.rect.right - badge_radius, self.rect.top + badge_radius)
         pygame.draw.circle(screen, tier_color, badge_center, badge_radius)
-        pygame.draw.circle(screen, (255, 255, 255), badge_center, badge_radius, 1)
+        pygame.draw.circle(screen, (255, 255, 255), badge_center, badge_radius, 2)
 
         try:
-            lv_font = pygame.font.SysFont("malgungothic", 10, bold=True)
+            lv_font = pygame.font.SysFont("malgungothic", 14, bold=True)
         except:
-            lv_font = pygame.font.Font(None, 13)
+            lv_font = pygame.font.Font(None, 18)
         lv_text = lv_font.render(str(self.level), True, (255, 255, 255))
         screen.blit(lv_text, lv_text.get_rect(center=badge_center))
 

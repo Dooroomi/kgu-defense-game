@@ -22,9 +22,9 @@ class MasterTower(Tower):
     # 단계별 능력치 표 (공격력 위주 증가) / upgrade_cost = 다음 단계로 갈 때 비용
     # [테스트용] 강화 비용 전부 1원 (정식 값: 4000 / 8000)
     LEVEL_DATA = {
-        1: {"damage": 5.0, "range": 150.0, "fire_rate": 1000, "upgrade_cost": 1},
-        2: {"damage": 9.0, "range": 150.0, "fire_rate": 1000, "upgrade_cost": 1},
-        3: {"damage": 15.0, "range": 150.0, "fire_rate": 1000, "upgrade_cost": 0},
+        1: {"damage": 5.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 1},
+        2: {"damage": 9.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 1},
+        3: {"damage": 15.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 0},
     }
 
     def attack(self, enemy, enemies, laser_effects, projectiles=None):
@@ -32,8 +32,8 @@ class MasterTower(Tower):
         # 1. 주 타겟 데미지
         enemy.take_damage(self.attack_damage)
 
-        # 2. 광역 범위 데미지 (주 타겟 반경 60px 내의 모든 적에게)
-        splash_radius = 60.0
+        # 2. 광역 범위 데미지 (주 타겟 반경 80px 내의 모든 적에게)
+        splash_radius = 80.0
         for other in enemies:
             if other != enemy and other.is_alive and not other.reached_end:
                 dist = math.hypot(other.x - enemy.x, other.y - enemy.y)

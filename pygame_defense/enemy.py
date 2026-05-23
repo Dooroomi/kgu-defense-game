@@ -64,7 +64,7 @@ class Enemy:
             self.x = 0.0
             self.y = 0.0
             
-        self.radius = 22 if self.is_boss else 14
+        self.radius = 48 if self.is_boss else 24  # 보스 96px / 일반 적 48px
         self.reached_end = False
         self.is_alive = True
 
@@ -170,31 +170,31 @@ class Enemy:
 
         # 보스 장식 및 텍스트 렌더링
         if self.is_boss:
-            pulse = int(5 * math.sin(pygame.time.get_ticks() * 0.01))
+            pulse = int(8 * math.sin(pygame.time.get_ticks() * 0.01))
             # 아우라 효과
-            pygame.draw.circle(screen, (255, 50, 50), (int(self.x), int(self.y)), self.radius + 6 + pulse, 2)
+            pygame.draw.circle(screen, (255, 50, 50), (int(self.x), int(self.y)), self.radius + 10 + pulse, 3)
             try:
-                boss_font = pygame.font.SysFont("malgungothic", 12, bold=True)
+                boss_font = pygame.font.SysFont("malgungothic", 18, bold=True)
             except:
-                boss_font = pygame.font.Font(None, 16)
+                boss_font = pygame.font.Font(None, 24)
             text = boss_font.render("교수님", True, (255, 255, 255))
             rect = text.get_rect(center=(int(self.x), int(self.y)))
             screen.blit(text, rect)
         else:
             # 일반 적 식별 이름
             try:
-                name_font = pygame.font.SysFont("malgungothic", 10)
+                name_font = pygame.font.SysFont("malgungothic", 14)
             except:
-                name_font = pygame.font.Font(None, 14)
+                name_font = pygame.font.Font(None, 18)
             text = name_font.render(self.enemy_type, True, (255, 255, 255))
             rect = text.get_rect(center=(int(self.x), int(self.y)))
             screen.blit(text, rect)
 
         # 2. 상단 체력바(Health Bar) 렌더링
-        bar_width = 40 if self.is_boss else 28
-        bar_height = 7 if self.is_boss else 4
+        bar_width = 80 if self.is_boss else 50
+        bar_height = 10 if self.is_boss else 6
         bar_x = int(self.x) - (bar_width // 2)
-        bar_y = int(self.y) - self.radius - 12
+        bar_y = int(self.y) - self.radius - 16
         
         # 체력 비율 계산
         health_ratio = self.hp / self.max_health if self.max_health > 0 else 0
