@@ -33,7 +33,7 @@ def play_music(filename):
         return
         
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    music_path = os.path.join(base_dir, filename)
+    music_path = os.path.join(base_dir, *filename.split('/'))
     try:
         pygame.mixer.music.stop()
         pygame.mixer.music.load(music_path)
@@ -54,7 +54,7 @@ def load_font(filename, size, bold=False):
         return font_cache[key]
         
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    font_path = os.path.join(base_dir, filename)
+    font_path = os.path.join(base_dir, *filename.split('/'))
     try:
         font = pygame.font.Font(font_path, size)
     except Exception as e:
@@ -270,10 +270,10 @@ def draw_shop(screen, font, mouse_pos, selected_item, current_stage, rem_enemies
     pygame.draw.line(screen, SIDEBAR_BORDER, (800, 0), (800, 600), 2)
     
     # 폰트 로드 (가독성 향상을 위해 폰트 이원화 적용)
-    title_font = load_font("cute_font.ttf", 18, bold=True)
-    semi_bold_font = load_font("cute_font.ttf", 12, bold=True)
-    small_font = load_font("cute_font.ttf", 11)
-    desc_font = load_font("cute_light_font.ttf", 9)
+    title_font = load_font("cute_font/Maplestory Bold.ttf", 18, bold=True)
+    semi_bold_font = load_font("cute_font/Maplestory Bold.ttf", 12, bold=True)
+    small_font = load_font("cute_font/Maplestory Bold.ttf", 11)
+    desc_font = load_font("cute_font/Maplestory Light.ttf", 9)
 
     # 2. 플레이어 재화 및 학점 상태 표시 (우측 사이드바 상단으로 이전)
     cred_color = (40, 167, 69) if current_credits >= 2.0 else (220, 53, 69) # 세련된 초록 / 세련된 빨강
@@ -300,7 +300,7 @@ def draw_shop(screen, font, mouse_pos, selected_item, current_stage, rem_enemies
         pygame.draw.rect(screen, (255, 255, 255), menu_btn_rect, 0, 4)
         pygame.draw.rect(screen, SIDEBAR_BORDER, menu_btn_rect, 1, 4)
         
-    menu_btn_font = load_font("cute_font.ttf", 12, bold=True)
+    menu_btn_font = load_font("cute_font/Maplestory Bold.ttf", 12, bold=True)
     menu_text = menu_btn_font.render("메뉴", True, DARK_TEXT)
     menu_text_rect = menu_text.get_rect(center=menu_btn_rect.center)
     screen.blit(menu_text, menu_text_rect)
@@ -381,8 +381,8 @@ def draw_state_button(screen, stage_state, current_stage, mouse_pos):
     btn_rect = pygame.Rect(810, 495, 180, 60)
     is_hover = btn_rect.collidepoint(mouse_pos)
     
-    btn_font = load_font("cute_font.ttf", 13, bold=True)
-    small_font = load_font("cute_font.ttf", 10)
+    btn_font = load_font("cute_font/Maplestory Bold.ttf", 13, bold=True)
+    small_font = load_font("cute_font/Maplestory Bold.ttf", 10)
 
     # 상태에 따른 버튼 디자인
     if stage_state in ["WAITING", "COMPLETED"]:
@@ -433,11 +433,11 @@ def main():
     pygame.display.set_caption("경기대 학점 디펜스")
     clock = pygame.time.Clock()
     
-    font = load_font("cute_font.ttf", 20)
+    font = load_font("cute_font/Maplestory Bold.ttf", 20)
 
     # 1-2. 효과음(SFX) 로드 (click.mp3 가정 - 절대경로 적용)
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    click_sound_path = os.path.join(base_dir, "click.mp3")
+    click_sound_path = os.path.join(base_dir, "music", "click.mp3")
     click_sound = None
     try:
         click_sound = pygame.mixer.Sound(click_sound_path)
@@ -445,14 +445,14 @@ def main():
         print(f"Warning: click.mp3 load failed from {click_sound_path} ({e}). Playing headless/without sound.")
 
     # 1-3. 길 타일 이미지 로드 (path_tile.png 가정 - 절대경로 적용)
-    path_tile_path = os.path.join(base_dir, "path_tile.png")
+    path_tile_path = os.path.join(base_dir, "picture", "path_tile.png")
     try:
         path_tile = pygame.image.load(path_tile_path)
     except Exception as e:
         print(f"Warning: path_tile.png load failed from {path_tile_path} ({e}). Fallback to color road rendering.")
 
     # 시작 화면 이미지 로드 (title_bg.jpg 가정 - 절대경로 적용)
-    title_bg_path = os.path.join(base_dir, "title_bg.jpg")
+    title_bg_path = os.path.join(base_dir, "picture", "title_bg.jpg")
     title_bg = None
     try:
         title_bg = pygame.image.load(title_bg_path)
@@ -461,8 +461,8 @@ def main():
         print(f"Warning: title_bg.jpg load failed from {title_bg_path} ({e}). Fallback to solid background.")
         
     # 시작 화면용 텍스트 및 버튼 정의 (커스텀 폰트 로드 및 60px 크기 적용)
-    title_font = load_font("cute_font.ttf", 90, bold=True)
-    btn_font = load_font("cute_font.ttf", 60, bold=True)
+    title_font = load_font("cute_font/Maplestory Bold.ttf", 90, bold=True)
+    btn_font = load_font("cute_font/Maplestory Bold.ttf", 60, bold=True)
         
     # "게임 시작" 및 "게임 종료" 버튼을 위한 텍스트 surfaces 정의
     start_text_normal = btn_font.render("게임 시작", True, WHITE)
@@ -476,8 +476,8 @@ def main():
     exit_btn_rect = exit_text_normal.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 150))
     
     # 게임 클리어(승리) 화면용 텍스트 및 버튼 정의
-    victory_title_font = load_font("cute_font.ttf", 48, bold=True)
-    victory_btn_font = load_font("cute_font.ttf", 36, bold=True)
+    victory_title_font = load_font("cute_font/Maplestory Bold.ttf", 48, bold=True)
+    victory_btn_font = load_font("cute_font/Maplestory Bold.ttf", 36, bold=True)
     
     victory_title_text = victory_title_font.render("학점 방어 성공!!", True, GOLD)
     victory_sub_text = font.render("보스 교수님을 물리치고 평점 4.5 수석 졸업을 달성했습니다!", True, DARK_TEXT)
@@ -492,7 +492,7 @@ def main():
     victory_menu_rect = menu_text_normal.get_rect(center=(400, 420))
     
     # 시작 BGM 재생
-    play_music("title_bgm.mp3")
+    play_music("music/title_bgm.mp3")
 
     # 2. 게임 오브젝트 컨테이너 및 플레이 상태 파라미터 정의
     enemies = []
@@ -570,7 +570,7 @@ def main():
                                 boss_spawned = False
                                 victory_triggered = False
                                 stage_state = "WAITING" # WAITING으로 변경하여 웨이브 대기 상태 진입!
-                                play_music("boss.mp3")
+                                play_music("music/boss.mp3")
                                 cheat_input = ""
                 elif event.key == pygame.K_SPACE:
                     if game_state == "PLAYING":
@@ -583,7 +583,7 @@ def main():
                             if current_stage == 5:
                                 boss_spawn_timer = 150 # 대폭 축소 (2.5초)
                                 boss_spawned = False
-                                play_music("boss.mp3") # 보스전 BGM 재생
+                                play_music("music/boss.mp3") # 보스전 BGM 재생
             
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = event.pos
@@ -613,7 +613,7 @@ def main():
                             victory_triggered = False
                             cheat_input = ""
                             show_home_popup = False
-                            play_music("title_bgm.mp3")
+                            play_music("music/title_bgm.mp3")
                             if click_sound:
                                 click_sound.play()
                         elif no_rect.collidepoint((mx, my)):
@@ -641,7 +641,7 @@ def main():
                             spawn_timer = 0
                             boss_spawned = False
                             victory_triggered = False
-                            play_music("game_bgm.mp3")
+                            play_music("music/game_bgm.mp3")
                             if click_sound:
                                 click_sound.play()
                         elif victory_menu_rect.collidepoint((mx, my)):
@@ -661,7 +661,7 @@ def main():
                             boss_spawned = False
                             victory_triggered = False
                             cheat_input = ""
-                            play_music("title_bgm.mp3")
+                            play_music("music/title_bgm.mp3")
                             if click_sound:
                                 click_sound.play()
                         continue  # Early exit, 다른 맵 클릭 방지
@@ -669,7 +669,7 @@ def main():
                     if game_state == "START_SCREEN":
                         if start_btn_rect.collidepoint((mx, my)):
                             game_state = "PLAYING"
-                            play_music("game_bgm.mp3")
+                            play_music("music/game_bgm.mp3")
                             if click_sound:
                                 click_sound.play()
                         elif exit_btn_rect.collidepoint((mx, my)):
@@ -716,7 +716,7 @@ def main():
                                 if current_stage == 5:
                                     boss_spawn_timer = 150 # 대폭 축소 (2.5초)
                                     boss_spawned = False
-                                    play_music("boss.mp3") # 보스전 BGM 재생
+                                    play_music("music/boss.mp3") # 보스전 BGM 재생
                                 # 시작 버튼 클릭 효과음 재생
                                 if click_sound:
                                     click_sound.play()
@@ -778,7 +778,7 @@ def main():
             pygame.mixer.music.stop()
             current_bgm = None
             try:
-                victory_sound_path = os.path.join(base_dir, "victory_narration.mp3")
+                victory_sound_path = os.path.join(base_dir, "music", "victory_narration.mp3")
                 victory_sound = pygame.mixer.Sound(victory_sound_path)
                 victory_sound.play(0) # 1회만 재생
             except Exception as e:
@@ -903,7 +903,7 @@ def main():
                 screen.blit(exit_text_normal, exit_btn_rect)
             
             # 비밀코드 UI 렌더링
-            cheat_font = load_font("cute_font.ttf", 20)
+            cheat_font = load_font("cute_font/Maplestory Bold.ttf", 20)
             cheat_text = cheat_font.render(f"비밀코드 (English): {cheat_input}", True, (200, 200, 200))
             cheat_rect = cheat_text.get_rect(center=(SCREEN_WIDTH // 2, 540))
             screen.blit(cheat_text, cheat_rect)
@@ -1031,7 +1031,7 @@ def main():
 
         # 3-6. 준비 기간 알림 깜빡이 텍스트 배너 (라이트 테마 보정)
         if stage_state in ["WAITING", "COMPLETED"]:
-            banner_font = load_font("cute_font.ttf", 20, bold=True)
+            banner_font = load_font("cute_font/Maplestory Bold.ttf", 20, bold=True)
             
             # 깜빡이는 효과 (사인 곡선 프레임 계산)
             flash = int(100 + 100 * math.sin(pygame.time.get_ticks() * 0.007))
@@ -1074,7 +1074,7 @@ def main():
             
         # 3-8. 학사경고 제적 (패배) 화면 렌더링
         elif stage_state == "GAME_OVER":
-            game_over_font = load_font("cute_font.ttf", 42, bold=True)
+            game_over_font = load_font("cute_font/Maplestory Bold.ttf", 42, bold=True)
             game_over_text = game_over_font.render("학사경고 제적 (GAME OVER)", True, (220, 53, 69))
             sub_text = font.render("학점이 0.0에 도달하여 제적되었습니다. 다음 학기에 재수강하세요.", True, DARK_TEXT)
             exit_text = font.render("ESC 키를 누르면 게임을 종료합니다.", True, (108, 117, 125))
@@ -1104,7 +1104,7 @@ def main():
             pygame.draw.rect(screen, (222, 226, 230), popup_rect, 2, 8)
             
             # 3) 질문 텍스트 출력
-            popup_font = load_font("cute_font.ttf", 20, bold=True)
+            popup_font = load_font("cute_font/Maplestory Bold.ttf", 20, bold=True)
             question_text = popup_font.render("메인 화면으로 돌아가시겠습니까?", True, DARK_TEXT)
             q_rect = question_text.get_rect(center=(500, 260))
             screen.blit(question_text, q_rect)
