@@ -21,33 +21,51 @@ scholarship_points = 15000  # 보유 재화(장학금) (초기값: 15,000원 - �
 path_tile = None            # 길을 나타내는 반복 타일 이미지
 game_state = "START_SCREEN" # 게임 대주제 상태 관리 (START_SCREEN, PLAYING, GAME_OVER)
 
+current_bgm = None              # 현재 재생 중인 BGM 파일명 추적용 전역 변수
+
 def play_music(filename):
     """
-    배경음악 재생 및 예외 처리를 위한 헬퍼 함수
+    배경음악 재생 및 예외 처리를 위한 헬퍼 함수.
+    동일한 음악이 이미 재생 중인 경우 끊김 방지를 위해 재동작을 건너뜁니다.
     """
+    global current_bgm
+    if current_bgm == filename:
+        return
+        
     base_dir = os.path.dirname(os.path.abspath(__file__))
     music_path = os.path.join(base_dir, filename)
     try:
         pygame.mixer.music.stop()
         pygame.mixer.music.load(music_path)
         pygame.mixer.music.play(-1)
+        current_bgm = filename
     except Exception as e:
         print(f"Warning: Failed to play music {filename} from {music_path} ({e})")
+
+font_cache = {}
 
 def load_font(filename, size, bold=False):
     """
     프로젝트 디렉토리에서 ttf 폰트를 로드하고, 실패 시 시스템 폰트로 안전하게 폴백합니다.
+    디스크 로딩으로 인한 성능 저하를 방지하기 위해 전역 캐시를 지원합니다.
     """
+    key = (filename, size, bold)
+    if key in font_cache:
+        return font_cache[key]
+        
     base_dir = os.path.dirname(os.path.abspath(__file__))
     font_path = os.path.join(base_dir, filename)
     try:
-        return pygame.font.Font(font_path, size)
+        font = pygame.font.Font(font_path, size)
     except Exception as e:
         print(f"Warning: Failed to load font {filename} ({e}). Fallback to malgungothic/default.")
         try:
-            return pygame.font.SysFont("malgungothic", size, bold=bold)
+            font = pygame.font.SysFont("malgungothic", size, bold=bold)
         except:
-            return pygame.font.Font(None, size)
+            font = pygame.font.Font(None, size)
+            
+    font_cache[key] = font
+    return font
 
 def draw_multicolor_title(screen, font, center_x, center_y):
     """
@@ -126,8 +144,8 @@ SHOP_ITEMS = [
     },
     {
         "name": "박사",
-        "cost": 10000,
-        "damage": 15,
+        "cost": 12000,
+        "damage": 25,
         "range": 200,
         "type": "tower",
         "color": PINK,
@@ -251,17 +269,11 @@ def draw_shop(screen, font, mouse_pos, selected_item, current_stage, rem_enemies
     pygame.draw.rect(screen, SIDEBAR_BG, (800, 0, 200, 600))
     pygame.draw.line(screen, SIDEBAR_BORDER, (800, 0), (800, 600), 2)
     
-    # 폰트 로드 (가독성 향상을 위해 설명 글꼴 크기 미세 조절)
-    try:
-        title_font = pygame.font.SysFont("malgungothic", 18, bold=True)
-        semi_bold_font = pygame.font.SysFont("malgungothic", 12, bold=True)
-        small_font = pygame.font.SysFont("malgungothic", 11)
-        desc_font = pygame.font.SysFont("malgungothic", 9)
-    except:
-        title_font = pygame.font.Font(None, 24)
-        semi_bold_font = pygame.font.Font(None, 16)
-        small_font = pygame.font.Font(None, 14)
-        desc_font = pygame.font.Font(None, 11)
+    # 폰트 로드 (가독성 향상을 위해 폰트 이원화 적용)
+    title_font = load_font("cute_font.ttf", 18, bold=True)
+    semi_bold_font = load_font("cute_font.ttf", 12, bold=True)
+    small_font = load_font("cute_font.ttf", 11)
+    desc_font = load_font("cute_light_font.ttf", 9)
 
     # 2. 플레이어 재화 및 학점 상태 표시 (우측 사이드바 상단으로 이전)
     cred_color = (40, 167, 69) if current_credits >= 2.0 else (220, 53, 69) # 세련된 초록 / 세련된 빨강
@@ -275,6 +287,23 @@ def draw_shop(screen, font, mouse_pos, selected_item, current_stage, rem_enemies
     screen.blit(fund_text, (815, 35))
     screen.blit(stage_text, (815, 65))
     screen.blit(enemies_text, (815, 85))
+    
+    # 메뉴 버튼 그리기 (우측 상단)
+    menu_btn_rect = pygame.Rect(930, 15, 55, 26)
+    menu_hover = menu_btn_rect.collidepoint(mouse_pos)
+    
+    # 버튼 배경색 및 테두리 (호버 피드백)
+    if menu_hover:
+        pygame.draw.rect(screen, (240, 240, 240), menu_btn_rect, 0, 4)
+        pygame.draw.rect(screen, (100, 100, 100), menu_btn_rect, 1, 4)
+    else:
+        pygame.draw.rect(screen, (255, 255, 255), menu_btn_rect, 0, 4)
+        pygame.draw.rect(screen, SIDEBAR_BORDER, menu_btn_rect, 1, 4)
+        
+    menu_btn_font = load_font("cute_font.ttf", 12, bold=True)
+    menu_text = menu_btn_font.render("메뉴", True, DARK_TEXT)
+    menu_text_rect = menu_text.get_rect(center=menu_btn_rect.center)
+    screen.blit(menu_text, menu_text_rect)
     
     # 구분선 (옅은 회색)
     pygame.draw.line(screen, SIDEBAR_BORDER, (810, 112), (990, 112), 1)
@@ -352,12 +381,8 @@ def draw_state_button(screen, stage_state, current_stage, mouse_pos):
     btn_rect = pygame.Rect(810, 495, 180, 60)
     is_hover = btn_rect.collidepoint(mouse_pos)
     
-    try:
-        btn_font = pygame.font.SysFont("malgungothic", 13, bold=True)
-        small_font = pygame.font.SysFont("malgungothic", 10)
-    except:
-        btn_font = pygame.font.Font(None, 16)
-        small_font = pygame.font.Font(None, 12)
+    btn_font = load_font("cute_font.ttf", 13, bold=True)
+    small_font = load_font("cute_font.ttf", 10)
 
     # 상태에 따른 버튼 디자인
     if stage_state in ["WAITING", "COMPLETED"]:
@@ -408,10 +433,7 @@ def main():
     pygame.display.set_caption("경기대 학점 디펜스")
     clock = pygame.time.Clock()
     
-    try:
-        font = pygame.font.SysFont("malgungothic", 20)      # 맑은 고딕
-    except:
-        font = pygame.font.Font(None, 24)                  # 폴백 폰트
+    font = load_font("cute_font.ttf", 20)
 
     # 1-2. 효과음(SFX) 로드 (click.mp3 가정 - 절대경로 적용)
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -453,6 +475,22 @@ def main():
     start_btn_rect = start_text_normal.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 60))
     exit_btn_rect = exit_text_normal.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 150))
     
+    # 게임 클리어(승리) 화면용 텍스트 및 버튼 정의
+    victory_title_font = load_font("cute_font.ttf", 48, bold=True)
+    victory_btn_font = load_font("cute_font.ttf", 36, bold=True)
+    
+    victory_title_text = victory_title_font.render("학점 방어 성공!!", True, GOLD)
+    victory_sub_text = font.render("보스 교수님을 물리치고 평점 4.5 수석 졸업을 달성했습니다!", True, DARK_TEXT)
+    
+    restart_text_normal = victory_btn_font.render("다시하기", True, DARK_TEXT)
+    restart_text_hover = victory_btn_font.render("다시하기", True, GOLD)
+    
+    menu_text_normal = victory_btn_font.render("메인 메뉴", True, DARK_TEXT)
+    menu_text_hover = victory_btn_font.render("메인 메뉴", True, (40, 167, 69))
+    
+    victory_restart_rect = restart_text_normal.get_rect(center=(400, 340))
+    victory_menu_rect = menu_text_normal.get_rect(center=(400, 420))
+    
     # 시작 BGM 재생
     play_music("title_bgm.mp3")
 
@@ -464,6 +502,9 @@ def main():
     
     # 레이저 빔 및 폭발 입자 등의 시각적 특수 효과를 저장하는 리스트
     laser_effects = []
+    
+    # 승리 시 오디오 및 초기화 처리를 위한 상태 플래그
+    victory_triggered = False
     
     # 글로벌 변수 초기화
     current_credits = 4.5
@@ -479,6 +520,12 @@ def main():
     
     # 구매를 위해 상점에서 선택된 현재 타워/트랩 종류 식별 문자열
     selected_item = None
+    
+    # 비밀코드(Cheat Code) 입력 문자열
+    cheat_input = ""
+    
+    # 홈 복귀 확인 팝업창 활성화 상태 플래그
+    show_home_popup = False
 
     # 3. 게임 실행 메인 루프 시작
     running = True
@@ -495,6 +542,36 @@ def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
+                elif show_home_popup:
+                    # 메인 메뉴 확인 팝업창이 뜬 동안에는 키 입력 전면 차단
+                    continue
+                elif game_state == "START_SCREEN":
+                    if event.key == pygame.K_BACKSPACE:
+                        cheat_input = cheat_input[:-1]
+                    else:
+                        # 영문 알파벳 키만 감지하여 소문자로 저장
+                        char = event.unicode
+                        if char and char.isalpha() and char.isascii():
+                            cheat_input += char.lower()
+                            
+                            # 비밀코드 'loveprof' 매칭 검사 및 이스터에그 발동
+                            if cheat_input == "loveprof":
+                                game_state = "PLAYING"
+                                current_stage = 5
+                                scholarship_points = 150000
+                                enemies = []
+                                towers = []
+                                traps = []
+                                projectiles = []
+                                laser_effects = []
+                                spawn_queue = [] # 대기 상태이므로 웨이브 시작 전에는 빈 리스트
+                                spawn_timer = 0
+                                boss_spawn_timer = 150
+                                boss_spawned = False
+                                victory_triggered = False
+                                stage_state = "WAITING" # WAITING으로 변경하여 웨이브 대기 상태 진입!
+                                play_music("boss.mp3")
+                                cheat_input = ""
                 elif event.key == pygame.K_SPACE:
                     if game_state == "PLAYING":
                         # 스페이스바 키 입력으로 웨이브 단계 시작
@@ -504,14 +581,91 @@ def main():
                             spawn_cooldown = STAGE_DATA[current_stage]["spawn_interval"]
                             spawn_timer = 0
                             if current_stage == 5:
-                                boss_spawn_timer = 600
+                                boss_spawn_timer = 150 # 대폭 축소 (2.5초)
                                 boss_spawned = False
+                                play_music("boss.mp3") # 보스전 BGM 재생
             
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = event.pos
                 
                 # 마우스 좌클릭 이벤트 처리
                 if event.button == 1:
+                    # 홈 복귀 확인 팝업창이 활성화되어 있을 때 클릭 핸들링 및 타 영역 클릭 차단
+                    if show_home_popup:
+                        yes_rect = pygame.Rect(400, 310, 80, 40)
+                        no_rect = pygame.Rect(520, 310, 80, 40)
+                        
+                        if yes_rect.collidepoint((mx, my)):
+                            # 메인 화면으로 돌아가기 (모든 데이터 완전 초기화)
+                            current_credits = 4.5
+                            scholarship_points = 15000
+                            current_stage = 1
+                            stage_state = "WAITING"
+                            game_state = "START_SCREEN"
+                            enemies = []
+                            towers = []
+                            traps = []
+                            projectiles = []
+                            laser_effects = []
+                            spawn_queue = []
+                            spawn_timer = 0
+                            boss_spawned = False
+                            victory_triggered = False
+                            cheat_input = ""
+                            show_home_popup = False
+                            play_music("title_bgm.mp3")
+                            if click_sound:
+                                click_sound.play()
+                        elif no_rect.collidepoint((mx, my)):
+                            # 취소
+                            show_home_popup = False
+                            if click_sound:
+                                click_sound.play()
+                        continue  # 팝업 이외의 모든 맵/상점 클릭 동작 차단 (Block)
+                        
+                    # 게임 클리어 화면에서의 버튼 클릭 인터셉트 처리
+                    if stage_state == "VICTORY":
+                        if victory_restart_rect.collidepoint((mx, my)):
+                            # 다시하기: 모든 데이터 완전 초기화 후 WAITING 대기 모드 기동
+                            current_credits = 4.5
+                            scholarship_points = 15000
+                            current_stage = 1
+                            stage_state = "WAITING"  # WAITING으로 변경하여 웨이브 대기 상태 진입!
+                            game_state = "PLAYING"
+                            enemies = []
+                            towers = []
+                            traps = []
+                            projectiles = []
+                            laser_effects = []
+                            spawn_queue = []  # 대기 상태이므로 웨이브 시작 전에는 빈 큐
+                            spawn_timer = 0
+                            boss_spawned = False
+                            victory_triggered = False
+                            play_music("game_bgm.mp3")
+                            if click_sound:
+                                click_sound.play()
+                        elif victory_menu_rect.collidepoint((mx, my)):
+                            # 메인 메뉴: 모든 데이터 초기화 후 타이틀 복귀
+                            current_credits = 4.5
+                            scholarship_points = 15000
+                            current_stage = 1
+                            stage_state = "WAITING"
+                            game_state = "START_SCREEN"
+                            enemies = []
+                            towers = []
+                            traps = []
+                            projectiles = []
+                            laser_effects = []
+                            spawn_queue = []
+                            spawn_timer = 0
+                            boss_spawned = False
+                            victory_triggered = False
+                            cheat_input = ""
+                            play_music("title_bgm.mp3")
+                            if click_sound:
+                                click_sound.play()
+                        continue  # Early exit, 다른 맵 클릭 방지
+                        
                     if game_state == "START_SCREEN":
                         if start_btn_rect.collidepoint((mx, my)):
                             game_state = "PLAYING"
@@ -522,6 +676,14 @@ def main():
                             running = False
                             
                     elif game_state == "PLAYING":
+                        # 우측 상단 메뉴 버튼 충돌 감지
+                        menu_btn_rect = pygame.Rect(930, 15, 55, 26)
+                        if menu_btn_rect.collidepoint((mx, my)):
+                            show_home_popup = True
+                            if click_sound:
+                                click_sound.play()
+                            continue  # 맵이나 상점 클릭 간섭 차단
+                            
                         clicked_shop_slot = False
                         
                         # 우측 상점 슬롯 충돌 감지 (y=165, 간격 82, 높이 78 적용)
@@ -552,8 +714,9 @@ def main():
                                 spawn_cooldown = STAGE_DATA[current_stage]["spawn_interval"]
                                 spawn_timer = 0
                                 if current_stage == 5:
-                                    boss_spawn_timer = 600
+                                    boss_spawn_timer = 150 # 대폭 축소 (2.5초)
                                     boss_spawned = False
+                                    play_music("boss.mp3") # 보스전 BGM 재생
                                 # 시작 버튼 클릭 효과음 재생
                                 if click_sound:
                                     click_sound.play()
@@ -609,6 +772,18 @@ def main():
                 elif event.button == 3:
                     if game_state == "PLAYING":
                         selected_item = None
+
+        # 승리 상태 감지 시 나레이션 음원 1회 재생 및 BGM 즉각 정지
+        if stage_state == "VICTORY" and not victory_triggered:
+            pygame.mixer.music.stop()
+            current_bgm = None
+            try:
+                victory_sound_path = os.path.join(base_dir, "victory_narration.mp3")
+                victory_sound = pygame.mixer.Sound(victory_sound_path)
+                victory_sound.play(0) # 1회만 재생
+            except Exception as e:
+                print(f"Warning: Failed to play victory_narration.mp3 ({e})")
+            victory_triggered = True
 
         # ----------------------------------------------------
         # 2. 게임 상태 업데이트 로직 (학점이 존재하고 PLAYING 상태일 때만 실행)
@@ -726,6 +901,12 @@ def main():
                 screen.blit(exit_text_hover, exit_btn_rect)
             else:
                 screen.blit(exit_text_normal, exit_btn_rect)
+            
+            # 비밀코드 UI 렌더링
+            cheat_font = load_font("cute_font.ttf", 20)
+            cheat_text = cheat_font.render(f"비밀코드 (English): {cheat_input}", True, (200, 200, 200))
+            cheat_rect = cheat_text.get_rect(center=(SCREEN_WIDTH // 2, 540))
+            screen.blit(cheat_text, cheat_rect)
             
             pygame.display.flip()
             continue
@@ -850,10 +1031,7 @@ def main():
 
         # 3-6. 준비 기간 알림 깜빡이 텍스트 배너 (라이트 테마 보정)
         if stage_state in ["WAITING", "COMPLETED"]:
-            try:
-                banner_font = pygame.font.SysFont("malgungothic", 20, bold=True)
-            except:
-                banner_font = pygame.font.Font(None, 24)
+            banner_font = load_font("cute_font.ttf", 20, bold=True)
             
             # 깜빡이는 효과 (사인 곡선 프레임 계산)
             flash = int(100 + 100 * math.sin(pygame.time.get_ticks() * 0.007))
@@ -868,34 +1046,35 @@ def main():
             screen.blit(banner_bg, (0, 80 - 22))
             screen.blit(banner_text, b_rect)
 
-        # 3-7. 게임 클리어 (승리) 화면 렌더링
+        # 3-7. 게임 클리어 (승리) 화면 렌더링 (텍스트형 다시하기/메인 메뉴 세로 배치 개편)
         if stage_state == "VICTORY":
-            try:
-                victory_font = pygame.font.SysFont("malgungothic", 42, bold=True)
-            except:
-                victory_font = pygame.font.Font(None, 48)
-            victory_text = victory_font.render("수석 졸업 달성 (VICTORY)", True, GOLD)
-            sub_text = font.render("축하합니다! 보스 교수님을 통과하고 평점 4.5 수석 졸업을 달성했습니다!", True, DARK_TEXT)
-            exit_text = font.render("ESC 키를 누르면 게임을 종료합니다.", True, (108, 117, 125))
-            
-            go_rect = victory_text.get_rect(center=(800 // 2, 600 // 2 - 40))
-            sub_rect = sub_text.get_rect(center=(800 // 2, 600 // 2 + 10))
-            exit_rect = exit_text.get_rect(center=(800 // 2, 600 // 2 + 60))
-            
             overlay = pygame.Surface((800, 600), pygame.SRCALPHA)
-            overlay.fill((255, 255, 255, 220)) # 라이트 테마 투명 오버레이
+            overlay.fill((255, 255, 255, 240)) # 아주 선명하고 세련된 라이트 오버레이
             screen.blit(overlay, (0, 0))
             
-            screen.blit(victory_text, go_rect)
-            screen.blit(sub_text, sub_rect)
-            screen.blit(exit_text, exit_rect)
+            # 타이틀 & 서브텍스트 그리기
+            title_rect = victory_title_text.get_rect(center=(400, 180))
+            sub_rect = victory_sub_text.get_rect(center=(400, 240))
+            screen.blit(victory_title_text, title_rect)
+            screen.blit(victory_sub_text, sub_rect)
+            
+            # 다시하기 버튼
+            is_restart_hover = victory_restart_rect.collidepoint(mouse_pos)
+            if is_restart_hover:
+                screen.blit(restart_text_hover, victory_restart_rect)
+            else:
+                screen.blit(restart_text_normal, victory_restart_rect)
+                
+            # 메인 메뉴 버튼
+            is_menu_hover = victory_menu_rect.collidepoint(mouse_pos)
+            if is_menu_hover:
+                screen.blit(menu_text_hover, victory_menu_rect)
+            else:
+                screen.blit(menu_text_normal, victory_menu_rect)
             
         # 3-8. 학사경고 제적 (패배) 화면 렌더링
         elif stage_state == "GAME_OVER":
-            try:
-                game_over_font = pygame.font.SysFont("malgungothic", 42, bold=True)
-            except:
-                game_over_font = pygame.font.Font(None, 48)
+            game_over_font = load_font("cute_font.ttf", 42, bold=True)
             game_over_text = game_over_font.render("학사경고 제적 (GAME OVER)", True, (220, 53, 69))
             sub_text = font.render("학점이 0.0에 도달하여 제적되었습니다. 다음 학기에 재수강하세요.", True, DARK_TEXT)
             exit_text = font.render("ESC 키를 누르면 게임을 종료합니다.", True, (108, 117, 125))
@@ -911,6 +1090,53 @@ def main():
             screen.blit(game_over_text, go_rect)
             screen.blit(sub_text, sub_rect)
             screen.blit(exit_text, exit_rect)
+
+        # 3-9. 메인 화면 복귀 확인 팝업창 렌더링
+        if show_home_popup:
+            # 1) 화면 전체 반투명 어두운 오버레이 (1000x600 전체 영역)
+            popup_overlay = pygame.Surface((SCREEN_WIDTH + 200, SCREEN_HEIGHT), pygame.SRCALPHA)
+            popup_overlay.fill((0, 0, 0, 150))
+            screen.blit(popup_overlay, (0, 0))
+            
+            # 2) 팝업 상자 렌더링 (가로 420px, 세로 200px, 둥근 모서리)
+            popup_rect = pygame.Rect(290, 200, 420, 200)
+            pygame.draw.rect(screen, (255, 255, 255), popup_rect, 0, 8)
+            pygame.draw.rect(screen, (222, 226, 230), popup_rect, 2, 8)
+            
+            # 3) 질문 텍스트 출력
+            popup_font = load_font("cute_font.ttf", 20, bold=True)
+            question_text = popup_font.render("메인 화면으로 돌아가시겠습니까?", True, DARK_TEXT)
+            q_rect = question_text.get_rect(center=(500, 260))
+            screen.blit(question_text, q_rect)
+            
+            # 4) 예 / 아니요 버튼 렌더링
+            yes_rect = pygame.Rect(400, 310, 80, 40)
+            no_rect = pygame.Rect(520, 310, 80, 40)
+            
+            is_yes_hover = yes_rect.collidepoint(mouse_pos)
+            is_no_hover = no_rect.collidepoint(mouse_pos)
+            
+            # 예 버튼 그리기
+            yes_color = (40, 167, 69) if is_yes_hover else DARK_TEXT
+            yes_bg = (240, 248, 240) if is_yes_hover else (255, 255, 255)
+            yes_border = (40, 167, 69) if is_yes_hover else (206, 212, 218)
+            
+            pygame.draw.rect(screen, yes_bg, yes_rect, 0, 4)
+            pygame.draw.rect(screen, yes_border, yes_rect, 1, 4)
+            yes_txt = popup_font.render("예", True, yes_color)
+            yes_txt_rect = yes_txt.get_rect(center=yes_rect.center)
+            screen.blit(yes_txt, yes_txt_rect)
+            
+            # 아니요 버튼 그리기
+            no_color = (255, 140, 0) if is_no_hover else DARK_TEXT
+            no_bg = (255, 248, 240) if is_no_hover else (255, 255, 255)
+            no_border = (255, 140, 0) if is_no_hover else (206, 212, 218)
+            
+            pygame.draw.rect(screen, no_bg, no_rect, 0, 4)
+            pygame.draw.rect(screen, no_border, no_rect, 1, 4)
+            no_txt = popup_font.render("아니요", True, no_color)
+            no_txt_rect = no_txt.get_rect(center=no_rect.center)
+            screen.blit(no_txt, no_txt_rect)
 
         # 버퍼 교체 (화면 갱신)
         pygame.display.flip()
