@@ -460,6 +460,7 @@ def main():
     enemies = []
     towers = []   # 유저가 직접 상점을 통해 배치하도록 빈 리스트로 시작
     traps = []    # 설치기(트랩) 컨테이너 추가
+    projectiles = [] # 학부생 타워의 아메리카노 발사체 컨테이너 추가
     
     # 레이저 빔 및 폭발 입자 등의 시각적 특수 효과를 저장하는 리스트
     laser_effects = []
@@ -646,9 +647,14 @@ def main():
             for enemy in enemies:
                 enemy.update(towers)
 
-            # 2-2. 모든 방어탑 타겟 조준 및 레이저 공격 연산
+            # 2-2. 모든 방어탑 타겟 조준 및 레이저 공격 연산 (학부생 발사체 리스트 전달)
             for tower in towers:
-                tower.update(enemies, laser_effects)
+                tower.update(enemies, laser_effects, projectiles)
+                
+            # 2-2-2. 아메리카노 발사체(Projectile) 이동 추적 및 충돌 업데이트
+            for proj in projectiles:
+                proj.update()
+            projectiles = [p for p in projectiles if p.is_active]
                 
             # 2-3. 모든 설치기(트랩) 3초 카운트다운 폭발 감지
             next_traps = []
@@ -740,6 +746,10 @@ def main():
         # 적 그리기
         for enemy in enemies:
             enemy.draw(screen)
+
+        # 발사체(아메리카노) 그리기
+        for proj in projectiles:
+            proj.draw(screen)
 
         # 3-1. 레이저 사격선 및 구형 충격파 시각 효과 렌더링
         next_lasers = []
