@@ -15,7 +15,7 @@ def load_americano_frames():
     if americano_frames:
         return
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    img_path = os.path.join(base_dir, "americano.png")
+    img_path = os.path.join(base_dir, "picture", "americano.png")
     try:
         sheet = pygame.image.load(img_path).convert_alpha()
         sheet_w, sheet_h = sheet.get_size()

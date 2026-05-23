@@ -124,7 +124,7 @@ class Enemy:
             try:
                 if pygame.mixer.get_init():
                     base_dir = os.path.dirname(os.path.abspath(__file__))
-                    stun_sound_path = os.path.join(base_dir, "stun.mp3")
+                    stun_sound_path = os.path.join(base_dir, "music", "stun.mp3")
                     stun_sound = pygame.mixer.Sound(stun_sound_path)
             except Exception as e:
                 print(f"Warning: Failed to load stun.mp3 ({e})")
