@@ -68,11 +68,12 @@ class Enemy:
         self.reached_end = False
         self.is_alive = True
 
-    def update(self, towers=None):
+    def update(self, towers=None, dt=16.667):
         """
         적 캐릭터의 이동 및 상태 업데이트 메서드.
         주어진 Waypoint 경로 리스트를 순서대로 추적하여 이동합니다.
         보스(교수님)의 경우 필드 상의 타워들을 기절(Stun)시키는 스킬을 시전합니다.
+        dt: 이전 프레임과의 경과 시간(ms). 모든 PC에서 동일한 체감 속도를 보장합니다.
         """
         if not self.is_alive or self.reached_end:
             return
@@ -102,18 +103,21 @@ class Enemy:
         dy = target_y - self.y
         distance = math.hypot(dx, dy)
 
+        # 이번 프레임에 이동할 거리 (dt 기반 → 60fps 기준 속도와 동일하게 보정)
+        step = self.speed * dt / 16.667
+
         # 이번 프레임에 목표 웨이포인트 도달 가능 여부
-        if distance <= self.speed:
+        if distance <= step:
             self.x = float(target_x)
             self.y = float(target_y)
             self.waypoint_index += 1
-            
+
             if self.waypoint_index >= len(self.waypoints) - 1:
                 self.reached_end = True
         else:
             # 방향 벡터 정규화 및 이동 처리
-            self.x += (dx / distance) * self.speed
-            self.y += (dy / distance) * self.speed
+            self.x += (dx / distance) * step
+            self.y += (dy / distance) * step
 
     def cast_boss_stun(self, towers):
         """
@@ -142,7 +146,7 @@ class Enemy:
             targets = random.sample(unstunned, min(len(unstunned), 3))
             for t in targets:
                 t.is_stunned = True
-                t.stun_timer = 120  # 2초(120프레임) 기절 적용
+                t.stun_timer = 2000  # 2초(2000ms) 기절 적용
 
     def take_damage(self, amount):
         """
