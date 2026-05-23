@@ -15,3 +15,10 @@ env/
 # OS 생성 파일
 .DS_Store
 Thumbs.db
+
+# Claude Code 관련 파일 (업로드 제외)
+.claude/
+.claude.json
+CLAUDE.md
+CLAUDE.local.md
+ONBOARDING.md
