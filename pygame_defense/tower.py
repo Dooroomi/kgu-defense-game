@@ -1,7 +1,35 @@
 # tower.py
 import pygame
 import math
+import os
 from settings import GRAY, CYAN, PURPLE, PINK, ORANGE
+
+# 아메리카노 발사체 이미지 슬라이싱을 위한 프레임 컨테이너 및 헬퍼 함수
+americano_frames = []
+
+def load_americano_frames():
+    """
+    americano.png 스프라이트 시트를 로드하고 subsurface를 이용하여 6개의 개별 프레임으로 분할합니다.
+    """
+    global americano_frames
+    if americano_frames:
+        return
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    img_path = os.path.join(base_dir, "americano.png")
+    try:
+        sheet = pygame.image.load(img_path).convert_alpha()
+        sheet_w, sheet_h = sheet.get_size()
+        frame_w = sheet_w // 2
+        frame_h = sheet_h // 3
+        for row in range(3):
+            for col in range(2):
+                rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
+                frame_img = sheet.subsurface(rect)
+                # 발사체가 눈에 잘 띄도록 24x24로 예쁘게 리사이즈
+                scaled_frame = pygame.transform.scale(frame_img, (24, 24))
+                americano_frames.append(scaled_frame)
+    except Exception as e:
+        print(f"Warning: Failed to load americano.png from {img_path} ({e})")
 
 class Tower:
     def __init__(self, tower_type, x, y):
@@ -53,7 +81,7 @@ class Tower:
             self.cost = 1500
             self.color = GRAY
 
-    def update(self, enemies, laser_effects):
+    def update(self, enemies, laser_effects, projectiles=None):
         """
         타워 동작 업데이트. 범위 내의 적을 탐색하고 주기적으로 공격합니다.
         보스의 스턴 공격을 받았을 때는 카운트다운을 하며 작동을 멈춥니다.
@@ -73,7 +101,7 @@ class Tower:
         if self.cooldown_tracker == 0:
             target = self.find_target(enemies)
             if target:
-                self.attack(target, enemies, laser_effects)
+                self.attack(target, enemies, laser_effects, projectiles)
 
     def find_target(self, enemies):
         """
@@ -98,12 +126,16 @@ class Tower:
 
         return best_target
 
-    def attack(self, enemy, enemies, laser_effects):
+    def attack(self, enemy, enemies, laser_effects, projectiles=None):
         """
         타겟으로 정한 적에게 피해를 입히고 사격 쿨다운을 리셋합니다.
         광역 공격 타워(석사)인 경우 스플래시 데미지를 가합니다.
+        학부생 타워인 경우 발사체를 생성해 날려보냅니다.
         """
-        if self.is_aoe:
+        if self.tower_type == "학부생" and projectiles is not None:
+            # 학부생 타워는 즉발 데미지 대신 아메리카노 발사체(Projectile) 생성
+            projectiles.append(Projectile("americano", enemy, self.x, self.y, self.attack_damage))
+        elif self.is_aoe:
             # 1. 주 타겟 데미지
             enemy.take_damage(self.attack_damage)
             # 2. 광역 범위 데미지 (주 타겟 반경 60px 내의 모든 적에게)
@@ -124,7 +156,7 @@ class Tower:
                 "duration": 7
             })
         else:
-            # 단일 타겟 데미지
+            # 단일 타겟 데미지 (박사 등)
             enemy.take_damage(self.attack_damage)
             
             # 단일 사격 레이저 추가
@@ -283,20 +315,72 @@ class Trap:
 
 
 class Projectile:
-    def __init__(self, weapon_type, target_enemy, x, y):
+    def __init__(self, weapon_type, target_enemy, x, y, damage=3.0):
         """
-        (하위 호환성을 위해 유지되는 뼈대 모델)
+        학부생 타워가 발사하는 아메리카노(커피 컵) 투척용 투사체 클래스
         """
         self.weapon_type = weapon_type
         self.target_enemy = target_enemy
-        self.x = x
-        self.y = y
-        self.speed = 5.0
-        self.radius = 5
+        self.x = float(x)
+        self.y = float(y)
+        self.damage = float(damage)
+        self.speed = 7.0                 # 등속 이동 속도
+        self.radius = 12
         self.is_active = True
+        
+        # 애니메이션 파라미터 구성
+        self.current_frame = 0
+        self.animation_timer = 0
+        self.animation_speed = 5         # 5틱마다 다음 애니메이션 프레임으로 전환 (약 12 FPS)
+        
+        # 투사체 소스 프레임 리스트 로드
+        load_americano_frames()
 
     def update(self):
-        pass
+        """
+        발사체를 적을 향해 등속 추적 이동시키고, 프레임 애니메이션 인덱스를 갱신합니다.
+        """
+        if not self.is_active:
+            return
+            
+        # 1. 타겟 소멸/본진도입 감지 시 자동 소멸 예외 처리
+        if not self.target_enemy.is_alive or self.target_enemy.reached_end:
+            self.is_active = False
+            return
+            
+        # 2. 타겟 적의 실시간 (x, y) 중심 좌표 추적 및 이동
+        dx = self.target_enemy.x - self.x
+        dy = self.target_enemy.y - self.y
+        distance = math.hypot(dx, dy)
+        
+        if distance <= self.speed:
+            # 충돌 성공! 데미지 적용 및 발사체 소멸
+            self.target_enemy.take_damage(self.damage)
+            self.is_active = False
+        else:
+            # 방향 벡터 정규화 및 이동 연산
+            self.x += (dx / distance) * self.speed
+            self.y += (dy / distance) * self.speed
+            
+        # 3. 틱 타이머 기반 프레임 번호 순차 증가 (0~5프레임 순환)
+        self.animation_timer += 1
+        if self.animation_timer >= self.animation_speed:
+            self.animation_timer = 0
+            self.current_frame = (self.current_frame + 1) % 6
 
     def draw(self, screen):
-        pass
+        """
+        슬라이싱된 아메리카노 스프라이트 이미지의 애니메이션을 그립니다.
+        """
+        if not self.is_active:
+            return
+            
+        # 로드된 6개의 이미지 리스트 중에서 렌더링 진행
+        if americano_frames and self.current_frame < len(americano_frames):
+            img = americano_frames[self.current_frame]
+            rect = img.get_rect(center=(int(self.x), int(self.y)))
+            screen.blit(img, rect)
+        else:
+            # 이미지 로드 실패 시에 대비한 깔끔한 브라운 컬러 커피 구체 폴백 렌더링
+            pygame.draw.circle(screen, (101, 67, 33), (int(self.x), int(self.y)), 6)
+            pygame.draw.circle(screen, (30, 20, 10), (int(self.x), int(self.y)), 6, 1)
