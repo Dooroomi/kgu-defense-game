@@ -1,7 +1,11 @@
 # enemy.py
 import pygame
 import math
+import os
 from settings import GREEN, RED
+
+# 스턴 효과음 로딩 (믹서 기동 오류 방지를 위해 지연 로드 지원)
+stun_sound = None
 
 class Enemy:
     def __init__(self, enemy_type, waypoints):
@@ -33,12 +37,13 @@ class Enemy:
             self.is_boss = False
             self.color = (138, 43, 226)     # 보라색
         elif enemy_type == "교수님":
-            hp = 1000.0
+            hp = 2000.0                     # 보스 체력 2000 상향
             speed = 0.6                     # 속도 매우 느림
             self.reward = 0                 # 보상 없음
             self.is_boss = True
             self.color = (139, 0, 0)        # 다크 레드
-            self.stun_cooldown = 180        # 3초마다 스턴 스킬 시전
+            self.stun_triggered_66 = False   # 2/3 체력 스턴 플래그
+            self.stun_triggered_33 = False   # 1/3 체력 스턴 플래그
         else:
             hp = 3.0
             speed = 2.0
@@ -72,18 +77,17 @@ class Enemy:
         if not self.is_alive or self.reached_end:
             return
 
-        # 보스 스킨(기절) 스킬 사용 로직
+        # 보스 광역 기절 스킬 조건 검사 (2/3, 1/3 체력)
         if self.is_boss and towers:
-            self.stun_cooldown -= 1
-            if self.stun_cooldown <= 0:
-                self.stun_cooldown = 180  # 3초 초기화
-                # 현재 기절하지 않은 타워 후보 검색
-                unstunned_towers = [t for t in towers if not t.is_stunned]
-                if unstunned_towers:
-                    import random
-                    target_tower = random.choice(unstunned_towers)
-                    target_tower.is_stunned = True
-                    target_tower.stun_timer = 120  # 2초(120프레임) 기절 적용
+            # 1. 2/3 체력 이하 도달 시 (첫 시전)
+            if self.hp <= self.max_health * 2 / 3 and not self.stun_triggered_66:
+                self.stun_triggered_66 = True
+                self.cast_boss_stun(towers)
+                
+            # 2. 1/3 체력 이하 도달 시 (두 번째 시전)
+            if self.hp <= self.max_health * 1 / 3 and not self.stun_triggered_33:
+                self.stun_triggered_33 = True
+                self.cast_boss_stun(towers)
 
         # 다음 목표 웨이포인트가 남아있는지 확인
         next_index = self.waypoint_index + 1
@@ -110,6 +114,35 @@ class Enemy:
             # 방향 벡터 정규화 및 이동 처리
             self.x += (dx / distance) * self.speed
             self.y += (dy / distance) * self.speed
+
+    def cast_boss_stun(self, towers):
+        """
+        교수님의 광역 기절 스킬. 무작위 타워 최대 3개를 동시에 2초간 기절시킵니다.
+        """
+        global stun_sound
+        if stun_sound is None:
+            try:
+                if pygame.mixer.get_init():
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
+                    stun_sound_path = os.path.join(base_dir, "stun.mp3")
+                    stun_sound = pygame.mixer.Sound(stun_sound_path)
+            except Exception as e:
+                print(f"Warning: Failed to load stun.mp3 ({e})")
+                
+        if stun_sound:
+            stun_sound.play()
+            
+        # 기절하지 않은 타워 목록 추출
+        unstunned = [t for t in towers if not t.is_stunned]
+        if not unstunned:
+            unstunned = list(towers)
+            
+        if unstunned:
+            import random
+            targets = random.sample(unstunned, min(len(unstunned), 3))
+            for t in targets:
+                t.is_stunned = True
+                t.stun_timer = 120  # 2초(120프레임) 기절 적용
 
     def take_damage(self, amount):
         """

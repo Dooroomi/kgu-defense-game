@@ -67,11 +67,11 @@ class Tower:
             self.cost = 4000
             self.color = PURPLE
         elif tower_type == "박사":
-            self.attack_damage = 15.0       # 공격력 15 (느리지만 강력한 단일)
+            self.attack_damage = 25.0       # 공격력 25 (상향 버프)
             self.attack_range = 200.0       # 사거리 200
             self.is_aoe = False
             self.fire_rate = 60             # 1.0초당 1회 공격 (2배 속도로 밸런스 조정)
-            self.cost = 10000
+            self.cost = 12000               # 12000원으로 조정
             self.color = PINK
         else:
             self.attack_damage = 1.0
