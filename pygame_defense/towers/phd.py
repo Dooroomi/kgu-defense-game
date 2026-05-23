@@ -19,9 +19,10 @@ class PhdTower(Tower):
     is_aoe = False
 
     # 단계별 능력치 표 (공격력 위주 증가) / upgrade_cost = 다음 단계로 갈 때 비용
+    # [테스트용] 강화 비용 전부 1원 (정식 값: 10000 / 20000)
     LEVEL_DATA = {
-        1: {"damage": 25.0, "range": 200.0, "fire_rate": 1000, "upgrade_cost": 10000},
-        2: {"damage": 45.0, "range": 200.0, "fire_rate": 1000, "upgrade_cost": 20000},
+        1: {"damage": 25.0, "range": 200.0, "fire_rate": 1000, "upgrade_cost": 1},
+        2: {"damage": 45.0, "range": 200.0, "fire_rate": 1000, "upgrade_cost": 1},
         3: {"damage": 75.0, "range": 200.0, "fire_rate": 1000, "upgrade_cost": 0},
     }
 
