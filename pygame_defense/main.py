@@ -5,13 +5,35 @@ import math
 import os
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS,
+    MAP_WIDTH, SIDEBAR_X, SIDEBAR_WIDTH,
     DARK_GRAY, LIGHT_GRAY, WAYPOINT_COLOR,
     WAYPOINTS, CYAN, PURPLE, PINK, ORANGE,
     LIGHT_BG, LIGHT_PATH, DARK_TEXT, SIDEBAR_BG, SIDEBAR_BORDER,
     GOLD, WHITE
 )
 from enemy import Enemy
-from tower import Tower, Trap
+from towers import create_tower, Trap
+
+# ==============================================================================
+# UI 레이아웃 상수 (상점 슬롯/버튼 - 그리기와 클릭 판정이 동일 좌표 공유)
+# ==============================================================================
+SLOT_X = SIDEBAR_X + 16                  # 상점 슬롯 좌측 x
+SLOT_W = SIDEBAR_WIDTH - 32              # 상점 슬롯 너비
+SLOT_Y0 = 185                            # 첫 슬롯 y
+SLOT_GAP = 104                           # 슬롯 간격
+SLOT_H = 92                              # 슬롯 높이
+
+def shop_slot_rect(i):
+    """i번째 상점 슬롯의 사각형 영역."""
+    return pygame.Rect(SLOT_X, SLOT_Y0 + i * SLOT_GAP, SLOT_W, SLOT_H)
+
+START_BTN_RECT = pygame.Rect(SLOT_X, 628, SLOT_W, 64)            # 하단 '학기 시작' 버튼
+MENU_BTN_RECT = pygame.Rect(SIDEBAR_X + SIDEBAR_WIDTH - 72, 16, 56, 28)  # 우상단 메뉴 버튼
+
+# 홈 복귀 확인 팝업 좌표 (화면 중앙, 그리기/클릭 공유)
+HOME_POPUP_RECT = pygame.Rect(SCREEN_WIDTH // 2 - 230, SCREEN_HEIGHT // 2 - 110, 460, 220)
+HOME_YES_RECT = pygame.Rect(SCREEN_WIDTH // 2 - 140, SCREEN_HEIGHT // 2 + 20, 100, 48)
+HOME_NO_RECT = pygame.Rect(SCREEN_WIDTH // 2 + 40, SCREEN_HEIGHT // 2 + 20, 100, 48)
 
 # ==============================================================================
 # 글로벌 상태 정의
@@ -97,27 +119,27 @@ def draw_multicolor_title(screen, font, center_x, center_y):
 STAGE_DATA = {
     1: {
         "enemies": ["과제"] * 30,
-        "spawn_interval": 90,
+        "spawn_interval": 1500,   # 1500ms = 1.5초 간격
         "bonus": 2000
     },
     2: {
         "enemies": ["과제"] * 20 + ["기말고사"] * 10,
-        "spawn_interval": 80,
+        "spawn_interval": 1333,   # 1333ms ≈ 1.33초 간격
         "bonus": 3000
     },
     3: {
         "enemies": ["과제"] * 15 + ["기말고사"] * 15 + ["논문"] * 5,
-        "spawn_interval": 70,
+        "spawn_interval": 1167,   # 1167ms ≈ 1.17초 간격
         "bonus": 4000
     },
     4: {
         "enemies": ["기말고사"] * 20 + ["논문"] * 15,
-        "spawn_interval": 60,
+        "spawn_interval": 1000,   # 1000ms = 1.0초 간격
         "bonus": 5000
     },
     5: {
         "enemies": ["논문"] * 15,
-        "spawn_interval": 50,
+        "spawn_interval": 833,    # 833ms ≈ 0.83초 간격
         "bonus": 0
     }
 }
@@ -128,7 +150,7 @@ SHOP_ITEMS = [
         "name": "학부생",
         "cost": 1500,
         "damage": 3,
-        "range": 120,
+        "range": 160,
         "type": "tower",
         "color": CYAN,
         "desc": "단일 공격, 기본적인 방어라인 구축"
@@ -137,7 +159,7 @@ SHOP_ITEMS = [
         "name": "석사",
         "cost": 4000,
         "damage": 5,
-        "range": 150,
+        "range": 195,
         "type": "tower",
         "color": PURPLE,
         "desc": "광역(Splash) 공격, 적 무리 처리용"
@@ -146,7 +168,7 @@ SHOP_ITEMS = [
         "name": "박사",
         "cost": 12000,
         "damage": 25,
-        "range": 200,
+        "range": 260,
         "type": "tower",
         "color": PINK,
         "desc": "강력한 단발 공격, 높은 사거리"
@@ -155,7 +177,7 @@ SHOP_ITEMS = [
         "name": "논문 작성 중인 박사",
         "cost": 1500,
         "damage": 30,
-        "range": 100,
+        "range": 130,
         "type": "trap",
         "color": ORANGE,
         "desc": "설치형 트랩, 3초 후 또는 접촉 시 대폭발"
@@ -182,25 +204,25 @@ def is_valid_placement(mx, my, item_type, towers, traps):
     타워/트랩의 배치 유효성 검증 함수.
     도로 외곽 경계, 다른 요소를 침범하지 않는지 체크합니다.
     """
-    # 1. 맵 영역 내부(x < 800) 경계선 검증 (우측 상점 패널 800~1000 침범 차단)
-    if mx < 25 or mx > 775 or my < 25 or my > 575:
+    # 1. 맵 영역 내부 경계선 검증 (우측 상점 사이드바 침범 차단)
+    if mx < 40 or mx > MAP_WIDTH - 40 or my < 40 or my > SCREEN_HEIGHT - 40:
         return False
-        
-    # 2. 다른 타워와의 충돌 및 오버랩 검증 (최소 거리 32px 필요)
+
+    # 2. 다른 타워와의 충돌 및 오버랩 검증 (최소 거리 64px 필요)
     for t in towers:
-        if math.hypot(mx - t.x, my - t.y) < 32:
+        if math.hypot(mx - t.x, my - t.y) < 64:
             return False
-            
-    # 3. 다른 설치기(트랩)와의 오버랩 검증 (최소 거리 25px 필요)
+
+    # 3. 다른 설치기(트랩)와의 오버랩 검증 (최소 거리 48px 필요)
     for tr in traps:
-        if math.hypot(mx - tr.x, my - tr.y) < 25:
+        if math.hypot(mx - tr.x, my - tr.y) < 48:
             return False
-            
-    # 4. 도로(Waypoint) 선분과의 충돌 검증 (타워 설치 제한)
+
+    # 4. 도로(Waypoint) 선분과의 충돌 검증 (타워 설치 제한, 도로 64px 기준)
     # 설치기(트랩)는 도로 위에도 설치할 수 있도록 예외 처리
     if item_type != "논문 작성 중인 박사":
         for i in range(len(WAYPOINTS) - 1):
-            if dist_to_segment((mx, my), WAYPOINTS[i], WAYPOINTS[i+1]) < 25:
+            if dist_to_segment((mx, my), WAYPOINTS[i], WAYPOINTS[i+1]) < 48:
                 return False
                 
     return True
@@ -249,49 +271,51 @@ def draw_path(screen):
             
     else:
         # 폴백: path_tile.png가 없을 때 기존의 세련된 연회색 2중 레이어 도로 렌더링
-        # 도로 양쪽의 어두운 경계선 레이어 효과 (두께 34px)
-        pygame.draw.lines(screen, (222, 226, 230), False, WAYPOINTS, 34)
-        # 도로 본체 (두께 30px, 라이트 그레이)
-        pygame.draw.lines(screen, LIGHT_PATH, False, WAYPOINTS, 30)
-        # 도로 안쪽 중앙 유도선 (두께 2px)
-        pygame.draw.lines(screen, (173, 181, 189), False, WAYPOINTS, 2)
+        # 도로 양쪽의 어두운 경계선 레이어 효과 (두께 72px)
+        pygame.draw.lines(screen, (222, 226, 230), False, WAYPOINTS, 72)
+        # 도로 본체 (두께 64px, 라이트 그레이)
+        pygame.draw.lines(screen, LIGHT_PATH, False, WAYPOINTS, 64)
+        # 도로 안쪽 중앙 유도선 (두께 3px)
+        pygame.draw.lines(screen, (173, 181, 189), False, WAYPOINTS, 3)
 
         # 각 회전 구간(Waypoint 관절) 마다 원형 노드 배치
         for wp in WAYPOINTS:
-            pygame.draw.circle(screen, WAYPOINT_COLOR, wp, 6)
-            pygame.draw.circle(screen, DARK_TEXT, wp, 7, 1)
+            pygame.draw.circle(screen, WAYPOINT_COLOR, wp, 10)
+            pygame.draw.circle(screen, DARK_TEXT, wp, 11, 1)
 
 def draw_shop(screen, font, mouse_pos, selected_item, current_stage, rem_enemies_count):
     """
     우측 상점 UI 및 구매 정보를 세련되고 풍부한 비주얼로 그립니다. (라이트 테마 반영 및 상태 정보 상단 이전)
     """
     # 1. 사이드바 배경 및 구분 외곽선 (흰색 배경, 옅은 회색 테두리)
-    pygame.draw.rect(screen, SIDEBAR_BG, (800, 0, 200, 600))
-    pygame.draw.line(screen, SIDEBAR_BORDER, (800, 0), (800, 600), 2)
-    
+    pygame.draw.rect(screen, SIDEBAR_BG, (SIDEBAR_X, 0, SIDEBAR_WIDTH, SCREEN_HEIGHT))
+    pygame.draw.line(screen, SIDEBAR_BORDER, (SIDEBAR_X, 0), (SIDEBAR_X, SCREEN_HEIGHT), 2)
+
+    pad_x = SIDEBAR_X + 16   # 사이드바 내부 좌측 여백 기준 x
+
     # 폰트 로드 (가독성 향상을 위해 폰트 이원화 적용)
     title_font = load_font("cute_font/Maplestory Bold.ttf", 18, bold=True)
-    semi_bold_font = load_font("cute_font/Maplestory Bold.ttf", 12, bold=True)
+    semi_bold_font = load_font("cute_font/Maplestory Bold.ttf", 13, bold=True)
     small_font = load_font("cute_font/Maplestory Bold.ttf", 11)
-    desc_font = load_font("cute_font/Maplestory Light.ttf", 9)
+    desc_font = load_font("cute_font/Maplestory Light.ttf", 10)
 
     # 2. 플레이어 재화 및 학점 상태 표시 (우측 사이드바 상단으로 이전)
     cred_color = (40, 167, 69) if current_credits >= 2.0 else (220, 53, 69) # 세련된 초록 / 세련된 빨강
     cred_text = semi_bold_font.render(f"보유 학점: {max(0.0, current_credits):.1f} / 4.5", True, cred_color)
     fund_text = title_font.render(f"{scholarship_points:,}원", True, (40, 167, 69)) # 초록색 계좌
-    
+
     stage_text = semi_bold_font.render(f"학기 진행: Stage {current_stage} / 5", True, DARK_TEXT)
     enemies_text = small_font.render(f"남은 과제/시험: {rem_enemies_count}마리", True, (108, 117, 125)) # 서브 회색 텍스트
-    
-    screen.blit(cred_text, (815, 15))
-    screen.blit(fund_text, (815, 35))
-    screen.blit(stage_text, (815, 65))
-    screen.blit(enemies_text, (815, 85))
-    
+
+    screen.blit(cred_text, (pad_x, 16))
+    screen.blit(fund_text, (pad_x, 38))
+    screen.blit(stage_text, (pad_x, 70))
+    screen.blit(enemies_text, (pad_x, 92))
+
     # 메뉴 버튼 그리기 (우측 상단)
-    menu_btn_rect = pygame.Rect(930, 15, 55, 26)
+    menu_btn_rect = MENU_BTN_RECT
     menu_hover = menu_btn_rect.collidepoint(mouse_pos)
-    
+
     # 버튼 배경색 및 테두리 (호버 피드백)
     if menu_hover:
         pygame.draw.rect(screen, (240, 240, 240), menu_btn_rect, 0, 4)
@@ -299,33 +323,33 @@ def draw_shop(screen, font, mouse_pos, selected_item, current_stage, rem_enemies
     else:
         pygame.draw.rect(screen, (255, 255, 255), menu_btn_rect, 0, 4)
         pygame.draw.rect(screen, SIDEBAR_BORDER, menu_btn_rect, 1, 4)
-        
+
     menu_btn_font = load_font("cute_font/Maplestory Bold.ttf", 12, bold=True)
     menu_text = menu_btn_font.render("메뉴", True, DARK_TEXT)
     menu_text_rect = menu_text.get_rect(center=menu_btn_rect.center)
     screen.blit(menu_text, menu_text_rect)
-    
+
     # 구분선 (옅은 회색)
-    pygame.draw.line(screen, SIDEBAR_BORDER, (810, 112), (990, 112), 1)
+    pygame.draw.line(screen, SIDEBAR_BORDER, (pad_x - 6, 124), (SIDEBAR_X + SIDEBAR_WIDTH - 10, 124), 1)
 
     # 3. 상점 타이틀 (이모티콘 제거 및 [ 학술 연구 상점 ] 형태로 강조)
     title_text = title_font.render("[ 학술 연구 상점 ]", True, DARK_TEXT)
-    screen.blit(title_text, (815, 120))
-    
-    subtitle_text = small_font.render("클릭하여 배치 [우클릭 취소]", True, (108, 117, 125))
-    screen.blit(subtitle_text, (815, 142))
-    
-    # 구분선 (옅은 회색)
-    pygame.draw.line(screen, SIDEBAR_BORDER, (810, 160), (990, 160), 1)
+    screen.blit(title_text, (pad_x, 134))
 
-    # 4. 구매 패널 슬롯 배치 (y = 165부터 시작, 높이 78px, 간격 82px)
+    subtitle_text = small_font.render("클릭하여 배치 [우클릭 취소]", True, (108, 117, 125))
+    screen.blit(subtitle_text, (pad_x, 158))
+
+    # 구분선 (옅은 회색)
+    pygame.draw.line(screen, SIDEBAR_BORDER, (pad_x - 6, 178), (SIDEBAR_X + SIDEBAR_WIDTH - 10, 178), 1)
+
+    # 4. 구매 패널 슬롯 배치 (SLOT_Y0부터 SLOT_GAP 간격, SLOT_H 높이)
     for i, item in enumerate(SHOP_ITEMS):
-        y_base = 165 + i * 82
-        btn_rect = pygame.Rect(810, y_base, 180, 78)
-        
+        btn_rect = shop_slot_rect(i)
+        y_base = btn_rect.y
+
         is_hover = btn_rect.collidepoint(mouse_pos)
         is_selected = (selected_item == item["name"])
-        
+
         # 슬롯 배경색 및 테두리 연출 (라이트 테마 및 세련된 호버 피드백)
         if is_selected:
             bg_color = (225, 235, 245)      # 은은한 라이트 블루 셀렉트
@@ -339,50 +363,50 @@ def draw_shop(screen, font, mouse_pos, selected_item, current_stage, rem_enemies
             bg_color = SIDEBAR_BG           # 흰색 기본 배경
             border_color = SIDEBAR_BORDER   # 옅은 회색 테두리
             border_width = 1
-            
+
         pygame.draw.rect(screen, bg_color, btn_rect, 0, 6)
         pygame.draw.rect(screen, border_color, btn_rect, border_width, 6)
-        
+
         # 슬롯 아이콘
-        pygame.draw.circle(screen, item["color"], (830, y_base + 18), 8)
-        pygame.draw.circle(screen, (30, 30, 30), (830, y_base + 18), 8, 1)
+        pygame.draw.circle(screen, item["color"], (btn_rect.x + 22, y_base + 22), 10)
+        pygame.draw.circle(screen, (30, 30, 30), (btn_rect.x + 22, y_base + 22), 10, 1)
 
         # 타워 이름 및 가격 렌더링
         name_txt = semi_bold_font.render(item["name"], True, DARK_TEXT)
         cost_color = (40, 167, 69) if scholarship_points >= item["cost"] else (220, 53, 69)
         cost_txt = small_font.render(f"{item['cost']:,}원", True, cost_color)
-        
-        screen.blit(name_txt, (846, y_base + 6))
-        screen.blit(cost_txt, (846, y_base + 22))
-        
+
+        screen.blit(name_txt, (btn_rect.x + 42, y_base + 8))
+        screen.blit(cost_txt, (btn_rect.x + 42, y_base + 28))
+
         # 공격 사양 및 두 줄 줄바꿈 설명 렌더링
         stats_txt = desc_font.render(f"위력:{item['damage']}  사거리:{item['range']}", True, (80, 80, 80))
-        screen.blit(stats_txt, (818, y_base + 38))
-        
-        # 14글자 기준 한글 설명 줄바꿈 알고리즘 적용
+        screen.blit(stats_txt, (btn_rect.x + 10, y_base + 50))
+
+        # 18글자 기준 한글 설명 줄바꿈 알고리즘 적용
         desc_str = item["desc"]
-        if len(desc_str) > 14:
-            line1 = desc_str[:14]
-            line2 = desc_str[14:]
+        if len(desc_str) > 18:
+            line1 = desc_str[:18]
+            line2 = desc_str[18:]
         else:
             line1 = desc_str
             line2 = ""
-            
+
         desc_txt_line1 = desc_font.render(line1, True, (108, 117, 125))
-        screen.blit(desc_txt_line1, (818, y_base + 51))
+        screen.blit(desc_txt_line1, (btn_rect.x + 10, y_base + 64))
         if line2:
             desc_txt_line2 = desc_font.render(line2.strip(), True, (108, 117, 125))
-            screen.blit(desc_txt_line2, (818, y_base + 62))
+            screen.blit(desc_txt_line2, (btn_rect.x + 10, y_base + 77))
 
 def draw_state_button(screen, stage_state, current_stage, mouse_pos):
     """
     하단 웨이브 제어 및 시작 버튼을 렌더링합니다. (라이트 테마 보정, 마찰 간격 배치)
     """
-    btn_rect = pygame.Rect(810, 495, 180, 60)
+    btn_rect = START_BTN_RECT
     is_hover = btn_rect.collidepoint(mouse_pos)
-    
-    btn_font = load_font("cute_font/Maplestory Bold.ttf", 13, bold=True)
-    small_font = load_font("cute_font/Maplestory Bold.ttf", 10)
+
+    btn_font = load_font("cute_font/Maplestory Bold.ttf", 14, bold=True)
+    small_font = load_font("cute_font/Maplestory Bold.ttf", 11)
 
     # 상태에 따른 버튼 디자인
     if stage_state in ["WAITING", "COMPLETED"]:
@@ -412,12 +436,133 @@ def draw_state_button(screen, stage_state, current_stage, mouse_pos):
     # 텍스트 출력
     txt_surf = btn_font.render(text_str, True, txt_color)
     sub_surf = small_font.render(sub_str, True, txt_color if stage_state != "VICTORY" else (240, 240, 240))
-    
-    txt_rect = txt_surf.get_rect(center=(900, 517))
-    sub_rect = sub_surf.get_rect(center=(900, 539))
-    
+
+    txt_rect = txt_surf.get_rect(center=(btn_rect.centerx, btn_rect.y + 24))
+    sub_rect = sub_surf.get_rect(center=(btn_rect.centerx, btn_rect.y + 46))
+
     screen.blit(txt_surf, txt_rect)
     screen.blit(sub_surf, sub_rect)
+
+def _popup_overlaps_path(panel):
+    """
+    팝업 사각형이 길(도로)과 겹치는지 검사.
+    사각형 내부를 일정 간격(격자)으로 샘플링한 점들이 길 선분에 가까우면 겹친 것으로 판정.
+    road_half은 실제 도로 두께(약 34px)의 절반에 맞춰, 너무 빡빡하게 잡지 않습니다.
+    """
+    road_half = 18  # 실제 도로 반두께(~17) + 약간의 여유
+    step = 22
+    xs = list(range(panel.left, panel.right, step)) + [panel.right]
+    ys = list(range(panel.top, panel.bottom, step)) + [panel.bottom]
+    for px in xs:
+        for py in ys:
+            for i in range(len(WAYPOINTS) - 1):
+                if dist_to_segment((px, py), WAYPOINTS[i], WAYPOINTS[i + 1]) < road_half:
+                    return True
+    return False
+
+def get_tower_popup_rects(tower):
+    """
+    선택된 타워의 강화/판매 팝업 (패널, 강화버튼, 판매버튼) 사각형을 계산.
+    팝업은 타워 가까이(특히 바로 아래)에 붙어 뜨되, 가능하면 길과 겹치지 않는
+    위치를 고릅니다. 빈 곳을 못 찾아도 멀리 보내지 않고 타워 바로 아래로 둡니다.
+    렌더링과 클릭 판정이 동일한 좌표를 쓰도록 한 곳에서 계산합니다.
+    """
+    pw, ph = 188, 96
+    gap = 12
+
+    def clamp(px, py):
+        px = max(5, min(int(px), MAP_WIDTH - pw - 5))
+        py = max(5, min(int(py), SCREEN_HEIGHT - ph - 5))
+        return px, py
+
+    # 타워 가까운 순서의 후보 위치 (아래쪽 우선 → 위쪽 → 옆)
+    candidates = [
+        (tower.x - pw // 2, tower.rect.bottom + gap),        # 아래 중앙
+        (tower.rect.right - pw, tower.rect.bottom + gap),     # 아래(왼쪽으로 펼침)
+        (tower.rect.left, tower.rect.bottom + gap),           # 아래(오른쪽으로 펼침)
+        (tower.x - pw // 2, tower.rect.top - ph - gap),       # 위 중앙
+        (tower.rect.right - pw, tower.rect.top - ph - gap),   # 위(왼쪽으로 펼침)
+        (tower.rect.left, tower.rect.top - ph - gap),         # 위(오른쪽으로 펼침)
+        (tower.rect.right + gap, tower.y - ph // 2),          # 오른쪽
+        (tower.rect.left - pw - gap, tower.y - ph // 2),      # 왼쪽
+    ]
+
+    chosen = None
+    for cx, cy in candidates:
+        px, py = clamp(cx, cy)
+        panel = pygame.Rect(px, py, pw, ph)
+        if not _popup_overlaps_path(panel):
+            chosen = panel
+            break
+
+    if chosen is None:
+        # 빈 곳을 못 찾으면 멀리 보내지 말고 타워 바로 아래로 (가까움 우선)
+        px, py = clamp(tower.x - pw // 2, tower.rect.bottom + gap)
+        chosen = pygame.Rect(px, py, pw, ph)
+
+    px, py = chosen.x, chosen.y
+    upgrade_btn = pygame.Rect(px + 10, py + 52, 80, 36)
+    sell_btn = pygame.Rect(px + 98, py + 52, 80, 36)
+    return chosen, upgrade_btn, sell_btn
+
+def draw_tower_popup(screen, tower, mouse_pos, scholarship_points):
+    """
+    선택된 타워의 강화/판매 팝업을 렌더링합니다.
+    - 왼쪽: 강화 버튼 (다음 단계 비용 표시, 최대 단계/잔액 부족 시 비활성)
+    - 오른쪽: 판매 버튼 (환급액 표시)
+    """
+    panel, upgrade_btn, sell_btn = get_tower_popup_rects(tower)
+
+    # 1. 패널 배경 + 테두리 (현재 강화 단계 색으로 테두리 강조)
+    pygame.draw.rect(screen, (255, 255, 255), panel, 0, 8)
+    pygame.draw.rect(screen, tower.get_tier_color(), panel, 2, 8)
+
+    title_font = load_font("cute_font/Maplestory Bold.ttf", 12, bold=True)
+    small_font = load_font("cute_font/Maplestory Bold.ttf", 10)
+
+    # 2. 상단 정보: 타워 이름 + 현재 단계 + 현재 공격력
+    info_text = title_font.render(
+        f"{tower.tower_type}  Lv.{tower.level}/{tower.MAX_LEVEL}", True, (33, 37, 41)
+    )
+    screen.blit(info_text, (panel.x + 12, panel.y + 8))
+    dmg_text = small_font.render(f"공격력 {tower.attack_damage:g}", True, (108, 117, 125))
+    screen.blit(dmg_text, (panel.x + 12, panel.y + 28))
+
+    # 3. 강화 버튼
+    can_up = tower.can_upgrade()
+    up_cost = tower.get_upgrade_cost()
+    affordable = can_up and scholarship_points >= up_cost
+    up_hover = upgrade_btn.collidepoint(mouse_pos)
+
+    if not can_up:
+        up_bg = (222, 226, 230)         # 최대 단계: 회색 비활성
+    elif not affordable:
+        up_bg = (245, 200, 200)         # 잔액 부족: 옅은 빨강
+    elif up_hover:
+        up_bg = (40, 167, 69)           # 호버: 진한 초록
+    else:
+        up_bg = (52, 199, 89)           # 기본: 초록
+    pygame.draw.rect(screen, up_bg, upgrade_btn, 0, 6)
+    pygame.draw.rect(screen, (206, 212, 218), upgrade_btn, 1, 6)
+
+    if can_up:
+        up_label = small_font.render("강화", True, (255, 255, 255) if affordable else (150, 60, 60))
+        up_cost_label = small_font.render(f"{up_cost:,}원", True, (255, 255, 255) if affordable else (150, 60, 60))
+        screen.blit(up_label, up_label.get_rect(center=(upgrade_btn.centerx, upgrade_btn.y + 12)))
+        screen.blit(up_cost_label, up_cost_label.get_rect(center=(upgrade_btn.centerx, upgrade_btn.y + 25)))
+    else:
+        max_label = small_font.render("MAX", True, (108, 117, 125))
+        screen.blit(max_label, max_label.get_rect(center=upgrade_btn.center))
+
+    # 4. 판매 버튼
+    sell_hover = sell_btn.collidepoint(mouse_pos)
+    sell_bg = (255, 140, 0) if sell_hover else (255, 160, 40)
+    pygame.draw.rect(screen, sell_bg, sell_btn, 0, 6)
+    pygame.draw.rect(screen, (206, 212, 218), sell_btn, 1, 6)
+    sell_label = small_font.render("판매", True, (255, 255, 255))
+    sell_value_label = small_font.render(f"+{tower.get_sell_value():,}원", True, (255, 255, 255))
+    screen.blit(sell_label, sell_label.get_rect(center=(sell_btn.centerx, sell_btn.y + 12)))
+    screen.blit(sell_value_label, sell_value_label.get_rect(center=(sell_btn.centerx, sell_btn.y + 25)))
 
 def main():
     global current_credits, scholarship_points, path_tile, game_state
@@ -429,8 +574,10 @@ def main():
     except Exception as e:
         print(f"Mixer initialization warning: {e}")
         
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("경기대 학점 디펜스")
+    # SCALED: 논리 해상도(1280x720)를 유지하면서 창/전체화면에 맞춰 자동 확대
+    # (마우스 좌표도 논리 좌표로 자동 변환됨 → 픽셀아트 또렷)
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SCALED)
+    pygame.display.set_caption("경기대 학점 디펜스 (F11: 전체화면)")
     clock = pygame.time.Clock()
     
     font = load_font("cute_font/Maplestory Bold.ttf", 20)
@@ -488,8 +635,8 @@ def main():
     menu_text_normal = victory_btn_font.render("메인 메뉴", True, DARK_TEXT)
     menu_text_hover = victory_btn_font.render("메인 메뉴", True, (40, 167, 69))
     
-    victory_restart_rect = restart_text_normal.get_rect(center=(400, 340))
-    victory_menu_rect = menu_text_normal.get_rect(center=(400, 420))
+    victory_restart_rect = restart_text_normal.get_rect(center=(MAP_WIDTH // 2, 430))
+    victory_menu_rect = menu_text_normal.get_rect(center=(MAP_WIDTH // 2, 520))
     
     # 시작 BGM 재생
     play_music("music/title_bgm.mp3")
@@ -515,7 +662,7 @@ def main():
     spawn_queue = []
     spawn_timer = 0
     spawn_cooldown = 90
-    boss_spawn_timer = 600
+    boss_spawn_timer = 10000  # 10초 대기 (10000ms)
     boss_spawned = False
     
     # 구매를 위해 상점에서 선택된 현재 타워/트랩 종류 식별 문자열
@@ -530,7 +677,7 @@ def main():
     # 3. 게임 실행 메인 루프 시작
     running = True
     while running:
-        clock.tick(FPS)
+        dt = clock.tick(FPS)  # 경과 시간(ms) - 모든 타이머/이동에 사용
         mouse_pos = pygame.mouse.get_pos()
 
         # ----------------------------------------------------
@@ -542,6 +689,9 @@ def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
+                elif event.key == pygame.K_F11:
+                    # 전체화면 <-> 창모드 토글 (SCALED라서 좌표/픽셀 유지)
+                    pygame.display.toggle_fullscreen()
                 elif show_home_popup:
                     # 메인 메뉴 확인 팝업창이 뜬 동안에는 키 입력 전면 차단
                     continue
@@ -566,7 +716,7 @@ def main():
                                 laser_effects = []
                                 spawn_queue = [] # 대기 상태이므로 웨이브 시작 전에는 빈 리스트
                                 spawn_timer = 0
-                                boss_spawn_timer = 150
+                                boss_spawn_timer = 2500  # 2.5초 (2500ms)
                                 boss_spawned = False
                                 victory_triggered = False
                                 stage_state = "WAITING" # WAITING으로 변경하여 웨이브 대기 상태 진입!
@@ -581,7 +731,7 @@ def main():
                             spawn_cooldown = STAGE_DATA[current_stage]["spawn_interval"]
                             spawn_timer = 0
                             if current_stage == 5:
-                                boss_spawn_timer = 150 # 대폭 축소 (2.5초)
+                                boss_spawn_timer = 2500 # 대폭 축소 (2.5초 = 2500ms)
                                 boss_spawned = False
                                 play_music("music/boss.mp3") # 보스전 BGM 재생
             
@@ -592,9 +742,9 @@ def main():
                 if event.button == 1:
                     # 홈 복귀 확인 팝업창이 활성화되어 있을 때 클릭 핸들링 및 타 영역 클릭 차단
                     if show_home_popup:
-                        yes_rect = pygame.Rect(400, 310, 80, 40)
-                        no_rect = pygame.Rect(520, 310, 80, 40)
-                        
+                        yes_rect = HOME_YES_RECT
+                        no_rect = HOME_NO_RECT
+
                         if yes_rect.collidepoint((mx, my)):
                             # 메인 화면으로 돌아가기 (모든 데이터 완전 초기화)
                             current_credits = 4.5
@@ -677,18 +827,43 @@ def main():
                             
                     elif game_state == "PLAYING":
                         # 우측 상단 메뉴 버튼 충돌 감지
-                        menu_btn_rect = pygame.Rect(930, 15, 55, 26)
+                        menu_btn_rect = MENU_BTN_RECT
                         if menu_btn_rect.collidepoint((mx, my)):
                             show_home_popup = True
                             if click_sound:
                                 click_sound.play()
                             continue  # 맵이나 상점 클릭 간섭 차단
-                            
+
+                        # 선택된 타워가 있으면 강화/판매 팝업 버튼 클릭부터 처리
+                        sel_tower = next((t for t in towers if t.is_selected), None)
+                        if sel_tower is not None:
+                            panel_rect, up_btn_rect, sell_btn_rect = get_tower_popup_rects(sel_tower)
+                            if up_btn_rect.collidepoint((mx, my)):
+                                # 강화: 잔액 충분 + 최대 단계 미만일 때만
+                                if sel_tower.can_upgrade():
+                                    cost = sel_tower.get_upgrade_cost()
+                                    if scholarship_points >= cost:
+                                        scholarship_points -= cost
+                                        sel_tower.upgrade()
+                                        if click_sound:
+                                            click_sound.play()
+                                continue  # 팝업 클릭 소비 (맵/상점 간섭 차단)
+                            elif sell_btn_rect.collidepoint((mx, my)):
+                                # 판매: 환급 후 타워 제거
+                                scholarship_points += sel_tower.get_sell_value()
+                                towers.remove(sel_tower)
+                                if click_sound:
+                                    click_sound.play()
+                                continue
+                            elif panel_rect.collidepoint((mx, my)):
+                                # 팝업 패널 내부 빈 공간 클릭은 소비만 (선택 유지)
+                                continue
+
                         clicked_shop_slot = False
                         
-                        # 우측 상점 슬롯 충돌 감지 (y=165, 간격 82, 높이 78 적용)
+                        # 우측 상점 슬롯 충돌 감지 (공유 좌표 함수 사용)
                         for i, item in enumerate(SHOP_ITEMS):
-                            btn_rect = pygame.Rect(810, 165 + i * 82, 180, 78)
+                            btn_rect = shop_slot_rect(i)
                             if btn_rect.collidepoint((mx, my)):
                                 clicked_shop_slot = True
                                 if scholarship_points >= item["cost"]:
@@ -704,8 +879,8 @@ def main():
                                         click_sound.play()
                                 break
                                 
-                        # 하단 학기 시작 버튼 충돌 감지 (y=495 보정)
-                        btn_start_rect = pygame.Rect(810, 495, 180, 60)
+                        # 하단 학기 시작 버튼 충돌 감지 (공유 좌표 사용)
+                        btn_start_rect = START_BTN_RECT
                         if btn_start_rect.collidepoint((mx, my)):
                             clicked_shop_slot = True
                             if stage_state in ["WAITING", "COMPLETED"]:
@@ -714,7 +889,7 @@ def main():
                                 spawn_cooldown = STAGE_DATA[current_stage]["spawn_interval"]
                                 spawn_timer = 0
                                 if current_stage == 5:
-                                    boss_spawn_timer = 150 # 대폭 축소 (2.5초)
+                                    boss_spawn_timer = 2500 # 대폭 축소 (2.5초 = 2500ms)
                                     boss_spawned = False
                                     play_music("music/boss.mp3") # 보스전 BGM 재생
                                 # 시작 버튼 클릭 효과음 재생
@@ -723,7 +898,7 @@ def main():
     
                         # 상점 버튼 외부(게임 맵 내)를 클릭했고 타워가 선택된 상태이면 배치 진행
                         if not clicked_shop_slot and selected_item:
-                            if mx < 800:
+                            if mx < MAP_WIDTH:
                                 if is_valid_placement(mx, my, selected_item, towers, traps):
                                     # 타워 비용 추출 및 공제
                                     cost = 0
@@ -738,7 +913,7 @@ def main():
                                     if selected_item == "논문 작성 중인 박사":
                                         traps.append(Trap(mx, my))
                                     else:
-                                        towers.append(Tower(selected_item, mx, my))
+                                        towers.append(create_tower(selected_item, mx, my))
                                     
                                     # 배치 성공 효과음 재생
                                     if click_sound:
@@ -750,7 +925,7 @@ def main():
                                         
                         # 상점 버튼 외부(게임 맵 내)를 클릭했고 타워 배치 대기 상태가 아니면, 타워 선택/선택취소 진행
                         elif not clicked_shop_slot and not selected_item:
-                            if mx < 800:
+                            if mx < MAP_WIDTH:
                                 clicked_tower = None
                                 for t in towers:
                                     if t.rect.collidepoint((mx, my)):
@@ -793,7 +968,7 @@ def main():
             # 플레이 단계인 경우 적들의 스폰 진행
             if stage_state == "PLAYING":
                 if len(spawn_queue) > 0:
-                    spawn_timer += 1
+                    spawn_timer += dt  # ms 기반 누적
                     if spawn_timer >= spawn_cooldown:
                         # 큐에서 적을 한 마리씩 추출하여 스폰
                         enemy_type = spawn_queue.pop(0)
@@ -801,7 +976,7 @@ def main():
                         spawn_timer = 0
                 elif current_stage == 5 and not boss_spawned:
                     # 5단계의 경우 논문 10마리 스폰 후 10초 뒤 최종 보스 스폰
-                    boss_spawn_timer -= 1
+                    boss_spawn_timer -= dt  # ms 기반 차감
                     if boss_spawn_timer <= 0:
                         enemies.append(Enemy("교수님", WAYPOINTS))
                         boss_spawned = True
@@ -820,21 +995,21 @@ def main():
 
             # 2-1. 모든 적 생명체 좌표 업데이트 (보스 방어타 기절 스킬용 타워 리스트 참조 전달)
             for enemy in enemies:
-                enemy.update(towers)
+                enemy.update(towers, dt)
 
             # 2-2. 모든 방어탑 타겟 조준 및 레이저 공격 연산 (학부생 발사체 리스트 전달)
             for tower in towers:
-                tower.update(enemies, laser_effects, projectiles)
-                
+                tower.update(enemies, laser_effects, projectiles, dt)
+
             # 2-2-2. 아메리카노 발사체(Projectile) 이동 추적 및 충돌 업데이트
             for proj in projectiles:
-                proj.update()
+                proj.update(dt)
             projectiles = [p for p in projectiles if p.is_active]
-                
+
             # 2-3. 모든 설치기(트랩) 3초 카운트다운 폭발 감지
             next_traps = []
             for trap in traps:
-                trap.update(enemies, laser_effects)
+                trap.update(enemies, laser_effects, dt)
                 if trap.is_active:
                     next_traps.append(trap)
             traps = next_traps
@@ -902,10 +1077,10 @@ def main():
             else:
                 screen.blit(exit_text_normal, exit_btn_rect)
             
-            # 비밀코드 UI 렌더링
+            # 비밀코드 UI 렌더링 ('게임 종료' 버튼과 겹치지 않도록 한 칸 아래로)
             cheat_font = load_font("cute_font/Maplestory Bold.ttf", 20)
             cheat_text = cheat_font.render(f"비밀코드 (English): {cheat_input}", True, (200, 200, 200))
-            cheat_rect = cheat_text.get_rect(center=(SCREEN_WIDTH // 2, 540))
+            cheat_rect = cheat_text.get_rect(center=(SCREEN_WIDTH // 2, 630))
             screen.blit(cheat_text, cheat_rect)
             
             pygame.display.flip()
@@ -946,7 +1121,9 @@ def main():
                 color = fx["color"]
                 start = fx["start"]
                 end = fx["end"]
-                width = max(1, duration // 2)
+                # duration 비율로 굵기 계산 (initial_duration 기준 정규화)
+                ratio = duration / fx.get("initial_duration", 83)
+                width = max(1, int(ratio * 3))
                 pygame.draw.line(screen, color, start, end, width + 2)
                 pygame.draw.line(screen, (255, 255, 255), start, end, max(1, width))
                 
@@ -963,9 +1140,10 @@ def main():
                 
                 # 구형 충격파 팽창 효과 연출
                 splash_surf = pygame.Surface((int(r * 2), int(r * 2)), pygame.SRCALPHA)
-                alpha = int(180 * (duration / 7.0))
-                # 퍼지는 테두리 원
-                curr_r = int(r * (1.0 - duration / 7.0))
+                init_dur = fx.get("initial_duration", 117.0)
+                alpha = int(180 * (duration / init_dur))
+                # 퍼지는 테두리 원 (시간이 지날수록 확장)
+                curr_r = int(r * (1.0 - duration / init_dur))
                 pygame.draw.circle(splash_surf, (color[0], color[1], color[2], alpha), (int(r), int(r)), max(1, curr_r), 3)
                 pygame.draw.circle(splash_surf, (color[0], color[1], color[2], alpha // 3), (int(r), int(r)), int(r))
                 screen.blit(splash_surf, (end[0] - r, end[1] - r))
@@ -975,7 +1153,7 @@ def main():
                 ex = fx["x"]
                 ey = fx["y"]
                 max_r = fx["max_radius"]
-                total_dur = 18.0
+                total_dur = float(fx.get("initial_duration", 300.0))
                 curr_ratio = 1.0 - (duration / total_dur)
                 
                 # 3단 그라데이션 원형 섬광
@@ -988,7 +1166,7 @@ def main():
                 pygame.draw.circle(explosion_surf, (255, 255, 255, alpha // 3), (int(max_r), int(max_r)), int(r * 0.4))
                 screen.blit(explosion_surf, (ex - max_r, ey - max_r))
                 
-            fx["duration"] -= 1
+            fx["duration"] -= dt  # ms 기반 차감
             if fx["duration"] > 0:
                 next_lasers.append(fx)
         laser_effects = next_lasers
@@ -996,8 +1174,8 @@ def main():
         # 3-2. 타워 배치 설치 예고용 고스트 실루엣 및 사거리 표시
         if selected_item:
             mx, my = mouse_pos
-            if mx < 800:
-                r = 100
+            if mx < MAP_WIDTH:
+                r = 130
                 color = (255, 255, 255)
                 for item in SHOP_ITEMS:
                     if item["name"] == selected_item:
@@ -1014,11 +1192,11 @@ def main():
                 screen.blit(range_surf, (mx - r, my - r))
                 pygame.draw.circle(screen, preview_color, (mx, my), int(r), 1)
                 
-                # 설치 미리보기 도큐먼트 사각형/원형 표현
+                # 설치 미리보기 도큐먼트 사각형/원형 표현 (실제 크기에 맞춰 확대)
                 if selected_item == "논문 작성 중인 박사":
-                    pygame.draw.circle(screen, color, (mx, my), 12, 2)
+                    pygame.draw.circle(screen, color, (mx, my), 24, 3)
                 else:
-                    pygame.draw.rect(screen, color, (mx - 16, my - 16, 32, 32), 2)
+                    pygame.draw.rect(screen, color, (mx - 32, my - 32, 64, 64), 3)
 
         # 3-3. 게임 플레이 필드 좌상단 기본 정보 UI (우측 상점 패널 상단으로 이전 완료)
         pass
@@ -1038,23 +1216,28 @@ def main():
             banner_color = (40, 167 - flash // 2, 69) # 세련된 다크그린 깜빡임
             
             banner_text = banner_font.render(f"Stage {current_stage} 준비 완료! [SPACE] 키를 눌러 시험을 시작하세요", True, banner_color)
-            b_rect = banner_text.get_rect(center=(800 // 2, 80))
-            
+            b_rect = banner_text.get_rect(center=(MAP_WIDTH // 2, 90))
+
             # 텍스트 백그라운드 띠 렌더링 (반투명 흰색 띠)
-            banner_bg = pygame.Surface((800, 45), pygame.SRCALPHA)
+            banner_bg = pygame.Surface((MAP_WIDTH, 50), pygame.SRCALPHA)
             banner_bg.fill((255, 255, 255, 200))
-            screen.blit(banner_bg, (0, 80 - 22))
+            screen.blit(banner_bg, (0, 90 - 25))
             screen.blit(banner_text, b_rect)
+
+        # 3-6-2. 선택된 타워가 있으면 강화/판매 팝업 렌더링 (배너 위에 떠 있도록 배너 이후 그림)
+        sel_tower_popup = next((t for t in towers if t.is_selected), None)
+        if sel_tower_popup is not None:
+            draw_tower_popup(screen, sel_tower_popup, mouse_pos, scholarship_points)
 
         # 3-7. 게임 클리어 (승리) 화면 렌더링 (텍스트형 다시하기/메인 메뉴 세로 배치 개편)
         if stage_state == "VICTORY":
-            overlay = pygame.Surface((800, 600), pygame.SRCALPHA)
+            overlay = pygame.Surface((MAP_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             overlay.fill((255, 255, 255, 240)) # 아주 선명하고 세련된 라이트 오버레이
             screen.blit(overlay, (0, 0))
-            
+
             # 타이틀 & 서브텍스트 그리기
-            title_rect = victory_title_text.get_rect(center=(400, 180))
-            sub_rect = victory_sub_text.get_rect(center=(400, 240))
+            title_rect = victory_title_text.get_rect(center=(MAP_WIDTH // 2, 250))
+            sub_rect = victory_sub_text.get_rect(center=(MAP_WIDTH // 2, 330))
             screen.blit(victory_title_text, title_rect)
             screen.blit(victory_sub_text, sub_rect)
             
@@ -1079,11 +1262,11 @@ def main():
             sub_text = font.render("학점이 0.0에 도달하여 제적되었습니다. 다음 학기에 재수강하세요.", True, DARK_TEXT)
             exit_text = font.render("ESC 키를 누르면 게임을 종료합니다.", True, (108, 117, 125))
             
-            go_rect = game_over_text.get_rect(center=(800 // 2, 600 // 2 - 40))
-            sub_rect = sub_text.get_rect(center=(800 // 2, 600 // 2 + 10))
-            exit_rect = exit_text.get_rect(center=(800 // 2, 600 // 2 + 60))
-            
-            overlay = pygame.Surface((800, 600), pygame.SRCALPHA)
+            go_rect = game_over_text.get_rect(center=(MAP_WIDTH // 2, SCREEN_HEIGHT // 2 - 40))
+            sub_rect = sub_text.get_rect(center=(MAP_WIDTH // 2, SCREEN_HEIGHT // 2 + 10))
+            exit_rect = exit_text.get_rect(center=(MAP_WIDTH // 2, SCREEN_HEIGHT // 2 + 60))
+
+            overlay = pygame.Surface((MAP_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             overlay.fill((255, 255, 255, 220)) # 라이트 테마 투명 오버레이
             screen.blit(overlay, (0, 0))
             
@@ -1093,26 +1276,26 @@ def main():
 
         # 3-9. 메인 화면 복귀 확인 팝업창 렌더링
         if show_home_popup:
-            # 1) 화면 전체 반투명 어두운 오버레이 (1000x600 전체 영역)
-            popup_overlay = pygame.Surface((SCREEN_WIDTH + 200, SCREEN_HEIGHT), pygame.SRCALPHA)
+            # 1) 화면 전체 반투명 어두운 오버레이
+            popup_overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             popup_overlay.fill((0, 0, 0, 150))
             screen.blit(popup_overlay, (0, 0))
-            
-            # 2) 팝업 상자 렌더링 (가로 420px, 세로 200px, 둥근 모서리)
-            popup_rect = pygame.Rect(290, 200, 420, 200)
+
+            # 2) 팝업 상자 렌더링 (둥근 모서리, 화면 중앙)
+            popup_rect = HOME_POPUP_RECT
             pygame.draw.rect(screen, (255, 255, 255), popup_rect, 0, 8)
             pygame.draw.rect(screen, (222, 226, 230), popup_rect, 2, 8)
-            
+
             # 3) 질문 텍스트 출력
-            popup_font = load_font("cute_font/Maplestory Bold.ttf", 20, bold=True)
+            popup_font = load_font("cute_font/Maplestory Bold.ttf", 22, bold=True)
             question_text = popup_font.render("메인 화면으로 돌아가시겠습니까?", True, DARK_TEXT)
-            q_rect = question_text.get_rect(center=(500, 260))
+            q_rect = question_text.get_rect(center=(popup_rect.centerx, popup_rect.y + 56))
             screen.blit(question_text, q_rect)
-            
-            # 4) 예 / 아니요 버튼 렌더링
-            yes_rect = pygame.Rect(400, 310, 80, 40)
-            no_rect = pygame.Rect(520, 310, 80, 40)
-            
+
+            # 4) 예 / 아니요 버튼 렌더링 (공유 좌표)
+            yes_rect = HOME_YES_RECT
+            no_rect = HOME_NO_RECT
+
             is_yes_hover = yes_rect.collidepoint(mouse_pos)
             is_no_hover = no_rect.collidepoint(mouse_pos)
             

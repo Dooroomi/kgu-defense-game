@@ -64,15 +64,16 @@ class Enemy:
             self.x = 0.0
             self.y = 0.0
             
-        self.radius = 22 if self.is_boss else 14
+        self.radius = 48 if self.is_boss else 24  # 보스 96px / 일반 적 48px
         self.reached_end = False
         self.is_alive = True
 
-    def update(self, towers=None):
+    def update(self, towers=None, dt=16.667):
         """
         적 캐릭터의 이동 및 상태 업데이트 메서드.
         주어진 Waypoint 경로 리스트를 순서대로 추적하여 이동합니다.
         보스(교수님)의 경우 필드 상의 타워들을 기절(Stun)시키는 스킬을 시전합니다.
+        dt: 이전 프레임과의 경과 시간(ms). 모든 PC에서 동일한 체감 속도를 보장합니다.
         """
         if not self.is_alive or self.reached_end:
             return
@@ -102,18 +103,21 @@ class Enemy:
         dy = target_y - self.y
         distance = math.hypot(dx, dy)
 
+        # 이번 프레임에 이동할 거리 (dt 기반 → 60fps 기준 속도와 동일하게 보정)
+        step = self.speed * dt / 16.667
+
         # 이번 프레임에 목표 웨이포인트 도달 가능 여부
-        if distance <= self.speed:
+        if distance <= step:
             self.x = float(target_x)
             self.y = float(target_y)
             self.waypoint_index += 1
-            
+
             if self.waypoint_index >= len(self.waypoints) - 1:
                 self.reached_end = True
         else:
             # 방향 벡터 정규화 및 이동 처리
-            self.x += (dx / distance) * self.speed
-            self.y += (dy / distance) * self.speed
+            self.x += (dx / distance) * step
+            self.y += (dy / distance) * step
 
     def cast_boss_stun(self, towers):
         """
@@ -142,7 +146,7 @@ class Enemy:
             targets = random.sample(unstunned, min(len(unstunned), 3))
             for t in targets:
                 t.is_stunned = True
-                t.stun_timer = 120  # 2초(120프레임) 기절 적용
+                t.stun_timer = 2000  # 2초(2000ms) 기절 적용
 
     def take_damage(self, amount):
         """
@@ -166,31 +170,31 @@ class Enemy:
 
         # 보스 장식 및 텍스트 렌더링
         if self.is_boss:
-            pulse = int(5 * math.sin(pygame.time.get_ticks() * 0.01))
+            pulse = int(8 * math.sin(pygame.time.get_ticks() * 0.01))
             # 아우라 효과
-            pygame.draw.circle(screen, (255, 50, 50), (int(self.x), int(self.y)), self.radius + 6 + pulse, 2)
+            pygame.draw.circle(screen, (255, 50, 50), (int(self.x), int(self.y)), self.radius + 10 + pulse, 3)
             try:
-                boss_font = pygame.font.SysFont("malgungothic", 12, bold=True)
+                boss_font = pygame.font.SysFont("malgungothic", 18, bold=True)
             except:
-                boss_font = pygame.font.Font(None, 16)
+                boss_font = pygame.font.Font(None, 24)
             text = boss_font.render("교수님", True, (255, 255, 255))
             rect = text.get_rect(center=(int(self.x), int(self.y)))
             screen.blit(text, rect)
         else:
             # 일반 적 식별 이름
             try:
-                name_font = pygame.font.SysFont("malgungothic", 10)
+                name_font = pygame.font.SysFont("malgungothic", 14)
             except:
-                name_font = pygame.font.Font(None, 14)
+                name_font = pygame.font.Font(None, 18)
             text = name_font.render(self.enemy_type, True, (255, 255, 255))
             rect = text.get_rect(center=(int(self.x), int(self.y)))
             screen.blit(text, rect)
 
         # 2. 상단 체력바(Health Bar) 렌더링
-        bar_width = 40 if self.is_boss else 28
-        bar_height = 7 if self.is_boss else 4
+        bar_width = 80 if self.is_boss else 50
+        bar_height = 10 if self.is_boss else 6
         bar_x = int(self.x) - (bar_width // 2)
-        bar_y = int(self.y) - self.radius - 12
+        bar_y = int(self.y) - self.radius - 16
         
         # 체력 비율 계산
         health_ratio = self.hp / self.max_health if self.max_health > 0 else 0
