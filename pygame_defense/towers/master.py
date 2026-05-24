@@ -2,6 +2,7 @@
 import math
 from settings import PURPLE
 from .base import Tower
+from .projectile import Projectile
 
 
 class MasterTower(Tower):
@@ -28,27 +29,7 @@ class MasterTower(Tower):
     }
 
     def attack(self, enemy, enemies, laser_effects, projectiles=None):
-        """석사는 주 타겟 + 주변 반경 60px 적들에게 스플래시 데미지를 가한다."""
-        # 1. 주 타겟 데미지
-        enemy.take_damage(self.attack_damage)
-
-        # 2. 광역 범위 데미지 (주 타겟 반경 80px 내의 모든 적에게)
-        splash_radius = 80.0
-        for other in enemies:
-            if other != enemy and other.is_alive and not other.reached_end:
-                dist = math.hypot(other.x - enemy.x, other.y - enemy.y)
-                if dist <= splash_radius:
-                    other.take_damage(self.attack_damage)
-
-        # 광역 사격 레이저 및 폭발 충격파 추가
-        laser_effects.append({
-            "type": "splash",
-            "start": (self.x, self.y),
-            "end": (enemy.x, enemy.y),
-            "color": self.color,
-            "splash_radius": splash_radius,
-            "duration": 117,
-            "initial_duration": 117
-        })
-
+        """석사는 주 타겟을 향해 전공 서적 발사체(Projectile)를 던집니다."""
+        if projectiles is not None:
+            projectiles.append(Projectile("book", enemy, self.x, self.y, self.attack_damage))
         self.cooldown_tracker = self.fire_rate

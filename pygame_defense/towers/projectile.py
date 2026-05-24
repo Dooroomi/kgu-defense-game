@@ -6,59 +6,104 @@ import os
 # 아메리카노 발사체 이미지 슬라이싱을 위한 프레임 컨테이너 및 헬퍼 함수
 americano_frames = []
 
+# 무기별 슬라이싱된 애니메이션 프레임 캐시
+weapon_frames = {}
 
-def load_americano_frames():
+def load_weapon_frames(weapon_type):
     """
-    americano.png 스프라이트 시트를 로드하고 subsurface를 이용하여 6개의 개별 프레임으로 분할합니다.
+    지정된 무기 종류에 따른 스프라이트 시트를 지연 로드(Lazy Load)하고 분할 및 스케일링합니다.
     """
-    global americano_frames
-    if americano_frames:
-        return
-    # towers/ 의 부모 디렉토리(pygame_defense)를 기준으로 picture 경로 계산
+    global weapon_frames
+    if weapon_type in weapon_frames:
+        return weapon_frames[weapon_type]
+        
+    # towers/ 의 부모 디렉토리(pygame_defense)를 기준으로 picture/weapon 경로 계산
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    img_path = os.path.join(base_dir, "picture", "americano.png")
+    
+    # 무기별 스프라이트 시트 상세 사양 정의
+    specs = {
+        "americano": {"file": "americano.png", "cols": 2, "rows": 3, "frames": 6, "size": (32, 32)},
+        "book": {"file": "book.png", "cols": 3, "rows": 3, "frames": 8, "size": (32, 32)},
+        "thesis": {"file": "thesis_weapon.png", "cols": 2, "rows": 2, "frames": 4, "size": (32, 32)}
+    }
+    
+    if weapon_type not in specs:
+        return []
+        
+    spec = specs[weapon_type]
+    img_path = os.path.join(base_dir, "picture", "weapon", spec["file"])
+    
+    frames = []
     try:
         sheet = pygame.image.load(img_path).convert_alpha()
         sheet_w, sheet_h = sheet.get_size()
-        frame_w = sheet_w // 2
-        frame_h = sheet_h // 3
-        for row in range(3):
-            for col in range(2):
-                rect = pygame.Rect(col * frame_w, row * frame_h, frame_w, frame_h)
+        cols, rows = spec["cols"], spec["rows"]
+        
+        frame_w = sheet_w // cols
+        frame_h = sheet_h // rows
+        
+        count = 0
+        for r in range(rows):
+            for c in range(cols):
+                if count >= spec["frames"]:
+                    break
+                rect = pygame.Rect(c * frame_w, r * frame_h, frame_w, frame_h)
                 frame_img = sheet.subsurface(rect)
-                # 발사체가 눈에 잘 띄도록 32x32로 예쁘게 리사이즈 (1280 화면 기준)
-                scaled_frame = pygame.transform.scale(frame_img, (32, 32))
-                americano_frames.append(scaled_frame)
+                scaled_frame = pygame.transform.scale(frame_img, spec["size"])
+                frames.append(scaled_frame)
+                count += 1
     except Exception as e:
-        print(f"Warning: Failed to load americano.png from {img_path} ({e})")
+        print(f"Warning: Failed to load {spec['file']} from {img_path} ({e})")
+        frames = []
+        
+    weapon_frames[weapon_type] = frames
+    return frames
+
+
+def load_americano_frames():
+    """
+    이전 버전과의 완벽한 호환성을 보장하기 위해 americano_frames를 안전하게 업데이트하는 헬퍼 함수
+    """
+    global americano_frames
+    frames = load_weapon_frames("americano")
+    americano_frames.clear()
+    americano_frames.extend(frames)
 
 
 class Projectile:
     def __init__(self, weapon_type, target_enemy, x, y, damage=3.0):
         """
-        학부생 타워가 발사하는 아메리카노(커피 컵) 투척용 투사체 클래스
+        타워별(학부생, 석사, 박사) 전용 애니메이션 투사체 클래스
         """
         self.weapon_type = weapon_type
         self.target_enemy = target_enemy
         self.x = float(x)
         self.y = float(y)
+        
+        # 특수 시각 효과(석사 타워 레이저 splash 등)의 원점을 찾기 위한 시작 좌표 보존
+        self.start_x = float(x)
+        self.start_y = float(y)
+        
         self.damage = float(damage)
         self.speed = 7.0                 # 등속 이동 속도
         self.radius = 12
         self.is_active = True
 
-        # 애니메이션 파라미터 구성
+        # 애니메이션 파라미터 구성 (공통 약 12 FPS)
         self.current_frame = 0
         self.animation_timer = 0
-        self.animation_speed = 83        # 83ms마다 다음 애니메이션 프레임으로 전환 (약 12 FPS)
+        self.animation_speed = 83        # 83ms마다 다음 프레임 전환
 
         # 투사체 소스 프레임 리스트 로드
-        load_americano_frames()
+        load_weapon_frames(self.weapon_type)
+        if self.weapon_type == "americano":
+            load_americano_frames()
 
-    def update(self, dt=16.667):
+    def update(self, dt=16.667, enemies=None, laser_effects=None):
         """
         발사체를 적을 향해 등속 추적 이동시키고, 프레임 애니메이션 인덱스를 갱신합니다.
-        dt: 경과 시간(ms). 모든 PC에서 동일한 발사체 속도를 보장합니다.
+        석사 타워 무기(book)의 경우 충돌 시점에 스플래시 대미지 및 레이저 splash 효과를 안전하게 트리거합니다.
+        dt: 경과 시간(ms)
         """
         if not self.is_active:
             return
@@ -77,33 +122,63 @@ class Projectile:
         step = self.speed * dt / 16.667
 
         if distance <= step:
-            # 충돌 성공! 데미지 적용 및 발사체 소멸
+            # 충돌 성공! 주 타겟 데미지 적용
             self.target_enemy.take_damage(self.damage)
+            
+            # 석사 타워의 책(book) 무기 타격 시: 광역 스플래시 데미지 및 레이저 splash 효과 처리
+            if self.weapon_type == "book":
+                splash_radius = 80.0
+                if enemies is not None:
+                    for other in enemies:
+                        if other != self.target_enemy and other.is_alive and not other.reached_end:
+                            dist = math.hypot(other.x - self.target_enemy.x, other.y - self.target_enemy.y)
+                            if dist <= splash_radius:
+                                other.take_damage(self.damage)
+                
+                if laser_effects is not None:
+                    laser_effects.append({
+                        "type": "splash",
+                        "start": (self.start_x, self.start_y),
+                        "end": (self.target_enemy.x, self.target_enemy.y),
+                        "color": (138, 43, 226),  # 석사 타워 시그니처 색상 (PURPLE)
+                        "splash_radius": splash_radius,
+                        "duration": 117,
+                        "initial_duration": 117
+                    })
+            
             self.is_active = False
         else:
             # 방향 벡터 정규화 및 이동 연산
             self.x += (dx / distance) * step
             self.y += (dy / distance) * step
 
-        # 3. ms 타이머 기반 프레임 번호 순차 증가 (0~5프레임 순환)
+        # 3. ms 타이머 기반 프레임 번호 순차 증가 (무기 타입별 프레임 개수 자동 호환)
         self.animation_timer += dt
         if self.animation_timer >= self.animation_speed:
             self.animation_timer = 0
-            self.current_frame = (self.current_frame + 1) % 6
+            frames = weapon_frames.get(self.weapon_type, [])
+            if frames:
+                self.current_frame = (self.current_frame + 1) % len(frames)
 
     def draw(self, screen):
         """
-        슬라이싱된 아메리카노 스프라이트 이미지의 애니메이션을 그립니다.
+        슬라이싱된 전용 무기 스프라이트 이미지의 애니메이션을 그립니다.
         """
         if not self.is_active:
             return
 
-        # 로드된 6개의 이미지 리스트 중에서 렌더링 진행
-        if americano_frames and self.current_frame < len(americano_frames):
-            img = americano_frames[self.current_frame]
+        frames = weapon_frames.get(self.weapon_type, [])
+        if frames and self.current_frame < len(frames):
+            img = frames[self.current_frame]
             rect = img.get_rect(center=(int(self.x), int(self.y)))
             screen.blit(img, rect)
         else:
-            # 이미지 로드 실패 시에 대비한 깔끔한 브라운 컬러 커피 구체 폴백 렌더링
-            pygame.draw.circle(screen, (101, 67, 33), (int(self.x), int(self.y)), 6)
-            pygame.draw.circle(screen, (30, 20, 10), (int(self.x), int(self.y)), 6, 1)
+            # 이미지 로드 실패 시에 대비한 깔끔한 시그니처 컬러 커피/도형 폴백 렌더링
+            fallback_colors = {
+                "americano": ((101, 67, 33), (30, 20, 10)),   # 브라운 (커피)
+                "book": ((138, 43, 226), (40, 10, 60)),       # 보라 (석사)
+                "thesis": ((255, 105, 180), (60, 20, 40))     # 핑크 (박사)
+            }
+            colors = fallback_colors.get(self.weapon_type, ((128, 128, 128), (30, 30, 30)))
+            pygame.draw.circle(screen, colors[0], (int(self.x), int(self.y)), 6)
+            pygame.draw.circle(screen, colors[1], (int(self.x), int(self.y)), 6, 1)
