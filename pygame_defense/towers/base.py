@@ -2,7 +2,7 @@
 import os
 import pygame
 import math
-from settings import GRAY
+from settings import GRAY, WAYPOINTS
 
 # ==============================================================================
 # 강화 단계(레벨)별 표시 색상 - 노랑(1) > 초록(2) > 빨강(3)
@@ -15,36 +15,58 @@ TIER_COLORS = {
 }
 
 # ==============================================================================
-# 강화 단계별 스프라이트(애니메이션) 프레임 로딩 + 캐시
+# 강화 단계별 / 방향별 스프라이트(애니메이션) 프레임 로딩 + 캐시
 #
 # [픽셀 그림을 넣는 위치 규칙] (아직 그림이 없어도 게임은 폴백으로 정상 작동)
-#   picture/towers/<asset_key>/level<N>/  폴더 안에 프레임 이미지를 넣으면 됩니다.
-#   예) picture/towers/undergraduate/level1/0.png, 1.png, 2.png ...
+#   picture/towers/<asset_key>/level<N>/<direction>/  폴더 안에 프레임을 넣습니다.
+#   direction = front(적이 아래) / back(적이 위) / left(적이 왼쪽) / right(적이 오른쪽)
+#   예) picture/towers/undergraduate/level1/left/0.png, 1.png, 2.png ...
 #   - 파일명 사전순으로 정렬되어 애니메이션 순서가 됩니다.
 #   - 그림이 1장이면 정지 이미지, 여러 장이면 자동으로 애니메이션됩니다.
-#   - 폴더가 없거나 비어있으면 색상 사각형(폴백)으로 그려집니다.
+#
+# [폴백 규칙] 해당 방향 폴더가 없으면 아래 순서로 대체:
+#   right  -> left 를 좌우 반전(미러)
+#   그 외  -> front -> 평면(level<N>/) -> left 순으로 대체
+#   끝까지 없으면 색상 사각형(폴백 렌더링).
 # ==============================================================================
 _tower_frame_cache = {}
 
 # 타워 본체 렌더링 기준 크기 (프레임 이미지를 이 크기로 리사이즈)
 TOWER_SPRITE_SIZE = 64
 
+# 지원 방향
+DIRECTIONS = ("front", "back", "left", "right")
 
-def load_tower_frames(asset_key, level):
-    """
-    특정 타워(asset_key)의 특정 강화 단계(level)에 해당하는 애니메이션 프레임 리스트를 반환.
-    한 번 로드한 결과는 캐시하여 디스크 재접근을 피합니다.
-    그림이 없으면 빈 리스트([])를 반환하여 호출부가 폴백 렌더링을 하도록 합니다.
-    """
-    cache_key = (asset_key, level)
-    if cache_key in _tower_frame_cache:
-        return _tower_frame_cache[cache_key]
 
+def _normalize_frame(raw, size=TOWER_SPRITE_SIZE, bottom_margin=2):
+    """
+    프레임마다 캐릭터 크기/위치가 들쭉날쭉한 문제를 보정한다.
+    1) 불투명(캐릭터) 영역만 잘라내고
+    2) '키(높이)'를 일정하게 맞춰 비율 유지 스케일 후
+    3) 64x64 투명 캔버스에 가로 중앙 + 하단(발) 정렬로 배치.
+    → 프레임이 바뀌어도 캐릭터 크기/발 위치가 일정해 떨림/축소가 사라진다.
+    """
+    bb = raw.get_bounding_rect(min_alpha=1)  # 캐릭터(불투명) 경계
+    if bb.width <= 0 or bb.height <= 0:
+        return pygame.transform.scale(raw, (size, size))
+
+    cropped = raw.subsurface(bb).copy()
+    target_h = size - bottom_margin
+    scale = target_h / bb.height
+    new_w = max(1, round(bb.width * scale))
+    new_h = max(1, round(bb.height * scale))
+    scaled = pygame.transform.scale(cropped, (new_w, new_h))
+
+    canvas = pygame.Surface((size, size), pygame.SRCALPHA)
+    x = (size - new_w) // 2               # 가로 중앙 정렬
+    y = size - bottom_margin - new_h      # 하단(발) 정렬
+    canvas.blit(scaled, (x, y))
+    return canvas
+
+
+def _load_frames_from_folder(folder):
+    """폴더 안의 이미지들을 파일명 순으로 읽어 64px 정규화 프레임 리스트로 반환."""
     frames = []
-    # towers/ 의 부모 디렉토리(pygame_defense)를 기준으로 picture 경로 계산
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    folder = os.path.join(base_dir, "picture", "towers", asset_key, f"level{level}")
-
     if os.path.isdir(folder):
         try:
             files = sorted(
@@ -53,14 +75,88 @@ def load_tower_frames(asset_key, level):
             )
             for fn in files:
                 img = pygame.image.load(os.path.join(folder, fn)).convert_alpha()
-                img = pygame.transform.scale(img, (TOWER_SPRITE_SIZE, TOWER_SPRITE_SIZE))
-                frames.append(img)
+                frames.append(_normalize_frame(img))
         except Exception as e:
             print(f"Warning: Failed to load tower frames from {folder} ({e})")
             frames = []
+    return frames
+
+
+def load_tower_frames(asset_key, level, direction="front"):
+    """
+    특정 타워(asset_key)/강화단계(level)/방향(direction)의 애니메이션 프레임 리스트 반환.
+    한 번 로드한 결과는 (asset_key, level, direction)별로 캐시합니다.
+    그림이 없으면 위의 폴백 규칙을 따르며, 끝까지 없으면 빈 리스트를 반환합니다.
+    """
+    cache_key = (asset_key, level, direction)
+    if cache_key in _tower_frame_cache:
+        return _tower_frame_cache[cache_key]
+
+    # towers/ 의 부모 디렉토리(pygame_defense)를 기준으로 picture 경로 계산
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    lvl_dir = os.path.join(base_dir, "picture", "towers", asset_key, f"level{level}")
+
+    # 1) 요청한 방향 폴더
+    frames = _load_frames_from_folder(os.path.join(lvl_dir, direction))
+
+    # 2) 좌/우 한쪽만 그렸으면 반대쪽은 자동 좌우반전(미러)
+    if not frames and direction in ("left", "right"):
+        other = "right" if direction == "left" else "left"
+        other_frames = _load_frames_from_folder(os.path.join(lvl_dir, other))
+        frames = [pygame.transform.flip(f, True, False) for f in other_frames]
+
+    # 3) 그래도 없으면 front -> 평면 폴더 -> right -> left 순으로 폴백
+    if not frames and direction != "front":
+        frames = _load_frames_from_folder(os.path.join(lvl_dir, "front"))
+    if not frames:
+        frames = _load_frames_from_folder(lvl_dir)            # 구버전(평면) 호환
+    if not frames:
+        frames = _load_frames_from_folder(os.path.join(lvl_dir, "right"))
+    if not frames:
+        frames = _load_frames_from_folder(os.path.join(lvl_dir, "left"))
 
     _tower_frame_cache[cache_key] = frames
     return frames
+
+
+# 합성된 '던지기' 프레임 캐시 (방향별로 한 번만 만들고 재사용)
+_throw_cache = {}
+
+
+def composed_throw_frames(asset_key, level, direction):
+    """
+    특정 방향의 '던지기' 애니메이션 프레임을 반환.
+    - 자체 던지기 프레임이 충분하면(3장 이상) 그대로 사용 (right/left)
+    - 부족하면(예: back은 정지 그림뿐) 정지 1장 + right의 2,3번(던지는 순간)을 재활용
+    """
+    key = (asset_key, level, direction)
+    if key in _throw_cache:
+        return _throw_cache[key]
+
+    own = load_tower_frames(asset_key, level, direction)
+    if len(own) >= 3:
+        result = own
+    else:
+        right = load_tower_frames(asset_key, level, "right")
+        release = list(right[2:4]) if len(right) >= 4 else list(right)
+        stand = list(own[:1])
+        result = stand + release if release else own
+
+    _throw_cache[key] = result
+    return result
+
+
+def _closest_point_on_segment(p, a, b):
+    """점 p에서 선분 ab 위의 가장 가까운 점을 반환."""
+    px, py = p
+    ax, ay = a
+    bx, by = b
+    dx, dy = bx - ax, by - ay
+    l2 = dx * dx + dy * dy
+    if l2 == 0:
+        return (ax, ay)
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / l2))
+    return (ax + t * dx, ay + t * dy)
 
 
 class Tower:
@@ -114,6 +210,15 @@ class Tower:
         # 강화 단계 (1부터 시작)
         self.level = 1
         self.total_invested = self.base_cost  # 판매 환급 계산용 누적 투자금
+
+        # 바라보는 방향 (back/left/right) - 타겟 위치에 따라 갱신
+        self.facing = "right"
+        # idle(적 없음)일 때 바라볼 방향 = 가장 가까운 길 방향 (설치 위치 기준 고정)
+        self.idle_facing = self._path_facing()
+        # 사거리 안에 적이 있는지 (없으면 idle 정지 그림 표시)
+        self.has_target = False
+        # 던지기 애니메이션 재생 중 여부 (공격 발동 시 1회 재생)
+        self.is_attacking = False
 
         # 애니메이션 상태
         self.anim_frame = 0
@@ -176,7 +281,14 @@ class Tower:
         보스의 스턴 공격을 받았을 때는 카운트다운을 하며 작동을 멈춥니다.
         dt: 경과 시간(ms). 모든 PC에서 일정한 공격 속도를 보장합니다.
         """
-        # 애니메이션은 스턴 여부와 상관없이 항상 갱신
+        # 사거리 내 가장 가까운 적을 한 번만 탐색 (방향 갱신 + 공격에 공용 사용)
+        target = self.find_target(enemies)
+        self.has_target = target is not None
+        if target is not None:
+            # 타겟 위치에 따라 바라보는 방향 갱신
+            self.facing = self._direction_to(target)
+
+        # 던지기 애니메이션은 '공격(투사체 발사) 시점'에 1회 재생됨 (아래에서 발동)
         self._advance_animation(dt)
 
         # 스턴 관리 (ms 기반 차감)
@@ -192,18 +304,94 @@ class Tower:
 
         # 쿨다운이 끝나면 공격 진행
         if self.cooldown_tracker <= 0:
-            target = self.find_target(enemies)
             if target:
                 self.attack(target, enemies, laser_effects, projectiles)
+                # 공격 발동 = 던지기 애니메이션 1회 재생 (이미 재생 중이면 처음부터 강제 재시작)
+                self.is_attacking = True
+                self.anim_frame = 0
+                self.anim_timer = 0
+
+    def _throw_frames(self, direction):
+        """해당 방향의 던지기 애니메이션 프레임(자체 없으면 right 2,3 재활용)."""
+        return composed_throw_frames(self.asset_key, self.level, direction)
+
+    def _stand_frames(self, direction):
+        """해당 방향의 정지(서있는) 그림. front은 idle 폴더를 사용."""
+        if direction == "front":
+            f = load_tower_frames(self.asset_key, self.level, "idle")
+            if f:
+                return f
+        return load_tower_frames(self.asset_key, self.level, direction)
+
+    def _current_sprite(self):
+        """
+        지금 그릴 스프라이트 한 장을 반환(없으면 None → 색상 폴백).
+        - 공격 중: 바라보는 방향의 던지기 애니메이션 현재 프레임
+        - 적은 있으나 공격 사이: 방향 정지 그림(준비 자세)
+        - 적 없음(idle): 가장 가까운 길을 바라보는 정지 그림
+        """
+        if self.is_attacking:
+            frames = self._throw_frames(self.facing)
+            idx = self.anim_frame
+        elif self.has_target:
+            frames = self._stand_frames(self.facing)
+            idx = 0
+        else:
+            frames = self._stand_frames(self.idle_facing)
+            idx = 0
+        if not frames:
+            return None
+        return frames[idx if idx < len(frames) else 0]
+
+    def _dir_from_delta4(self, dx, dy):
+        """(dx,dy) 방향을 front/back/left/right 4방향으로 판정 (idle용)."""
+        if abs(dx) >= abs(dy):
+            return "right" if dx >= 0 else "left"
+        # 화면 좌표는 아래로 갈수록 y 증가 → 아래면 front(정면), 위면 back(뒷모습)
+        return "front" if dy > 0 else "back"
+
+    def _direction_to(self, enemy):
+        """
+        전투(던지기) 방향은 투사체가 날아갈 쪽 = 적의 좌우 위치로만 결정한다.
+        적이 캐릭터 중앙보다 조금이라도 왼쪽이면 left, 그 외(중앙/오른쪽)는 right.
+        (위/아래 여부는 던지기 방향에 영향 주지 않음 — 뒷모습은 idle에서만 사용)
+        """
+        return "left" if (enemy.x - self.x) < 0 else "right"
+
+    def _path_facing(self):
+        """설치 위치에서 '가장 가까운 길' 방향을 4방향으로 판정 (idle 바라보기용)."""
+        best = None
+        best_d = float('inf')
+        for i in range(len(WAYPOINTS) - 1):
+            cp = _closest_point_on_segment((self.x, self.y), WAYPOINTS[i], WAYPOINTS[i + 1])
+            d = math.hypot(cp[0] - self.x, cp[1] - self.y)
+            if d < best_d:
+                best_d = d
+                best = cp
+        if best is None:
+            return "front"
+        return self._dir_from_delta4(best[0] - self.x, best[1] - self.y)
 
     def _advance_animation(self, dt):
-        """현재 단계의 프레임이 2장 이상이면 ms 기반으로 프레임을 순환시킨다."""
-        frames = load_tower_frames(self.asset_key, self.level)
-        if len(frames) > 1:
-            self.anim_timer += dt
-            if self.anim_timer >= self.anim_speed:
-                self.anim_timer = 0
-                self.anim_frame = (self.anim_frame + 1) % len(frames)
+        """
+        공격(투사체 발사) 시 시작된 던지기 애니메이션을 1회만 재생한다(one-shot).
+        끝까지 재생하면 멈추고, 다음 공격 때 처음(frame 0)부터 다시 시작된다.
+        """
+        if not self.is_attacking:
+            return
+        frames = self._throw_frames(self.facing)
+        if len(frames) <= 1:
+            self.is_attacking = False
+            self.anim_frame = 0
+            return
+        self.anim_timer += dt
+        if self.anim_timer >= self.anim_speed:
+            self.anim_timer = 0
+            self.anim_frame += 1
+            if self.anim_frame >= len(frames):
+                # 1회 재생 완료 → 정지 (다음 공격 때 다시 시작)
+                self.anim_frame = 0
+                self.is_attacking = False
 
     def find_target(self, enemies):
         """
@@ -267,12 +455,10 @@ class Tower:
             pygame.draw.circle(screen, (80, 80, 80), (self.x, self.y), int(self.attack_range), 1)
 
         # 2. 타워 본체 드로잉 (그림 우선, 없으면 색상 사각형 폴백)
-        frames = load_tower_frames(self.asset_key, self.level)
-        if frames:
-            idx = self.anim_frame if self.anim_frame < len(frames) else 0
-            img = frames[idx]
-            img_rect = img.get_rect(center=(self.x, self.y))
-            screen.blit(img, img_rect)
+        sprite = self._current_sprite()
+        if sprite is not None:
+            img_rect = sprite.get_rect(center=(self.x, self.y))
+            screen.blit(sprite, img_rect)
         else:
             # 폴백: 색상 사각형 + 타워 이름 첫 글자
             pygame.draw.rect(screen, self.color, self.rect)
