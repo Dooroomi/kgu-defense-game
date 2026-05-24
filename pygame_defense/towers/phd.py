@@ -1,6 +1,7 @@
 # towers/phd.py
 from settings import PINK
 from .base import Tower
+from .projectile import Projectile
 
 
 class PhdTower(Tower):
@@ -26,4 +27,8 @@ class PhdTower(Tower):
         3: {"damage": 75.0, "range": 260.0, "fire_rate": 1000, "upgrade_cost": 0},
     }
 
-    # attack()은 base.Tower의 단일 타겟 빔 공격을 그대로 상속받아 사용한다.
+    def attack(self, enemy, enemies, laser_effects, projectiles=None):
+        """박사는 강력한 논문 발사체(Projectile)를 날려 단일 대상을 공격합니다."""
+        if projectiles is not None:
+            projectiles.append(Projectile("thesis", enemy, self.x, self.y, self.attack_damage))
+        self.cooldown_tracker = self.fire_rate

@@ -1001,9 +1001,9 @@ def main():
             for tower in towers:
                 tower.update(enemies, laser_effects, projectiles, dt)
 
-            # 2-2-2. 아메리카노 발사체(Projectile) 이동 추적 및 충돌 업데이트
+            # 2-2-2. 아메리카노/서적/논문 발사체(Projectile) 이동 추적 및 충돌 업데이트
             for proj in projectiles:
-                proj.update(dt)
+                proj.update(dt, enemies, laser_effects)
             projectiles = [p for p in projectiles if p.is_active]
 
             # 2-3. 모든 설치기(트랩) 3초 카운트다운 폭발 감지
