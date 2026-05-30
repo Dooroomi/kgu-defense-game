@@ -213,7 +213,8 @@ class Tower:
 
         # 바라보는 방향 (back/left/right) - 타겟 위치에 따라 갱신
         self.facing = "right"
-        # idle(적 없음)일 때 바라볼 방향 = 가장 가까운 길 방향 (설치 위치 기준 고정)
+        # idle(적 없음)일 때 바라볼 방향 = 가장 가까운 길의 방향으로 결정
+        # (세로 길 옆이면 정면 / 가로 길 옆이면 뒷모습) - 설치 위치 기준 고정
         self.idle_facing = self._path_facing()
         # 사거리 안에 적이 있는지 (없으면 idle 정지 그림 표시)
         self.has_target = False
@@ -359,7 +360,13 @@ class Tower:
         return "left" if (enemy.x - self.x) < 0 else "right"
 
     def _path_facing(self):
-        """설치 위치에서 '가장 가까운 길' 방향을 4방향으로 판정 (idle 바라보기용)."""
+        """
+        가장 가까운 길 점의 '상대 위치'로 idle 바라보기 방향을 정한다.
+        - 길이 타워보다 위쪽(=가로 길 아래에 설치) → 뒷모습(back)  : 길을 올려다봄(등이 보임)
+        - 길이 타워보다 아래쪽(=가로 길 위에 설치) → 정면(front)  : 길을 내려다봄
+        - 세로 길 옆(길이 좌/우에 있음)            → 정면(front)
+        (idle에서는 좌/우 옆모습을 쓰지 않는다.)
+        """
         best = None
         best_d = float('inf')
         for i in range(len(WAYPOINTS) - 1):
@@ -370,7 +377,12 @@ class Tower:
                 best = cp
         if best is None:
             return "front"
-        return self._dir_from_delta4(best[0] - self.x, best[1] - self.y)
+        dx = best[0] - self.x
+        dy = best[1] - self.y
+        # 길이 '위쪽'에 더 가깝게 있을 때만 뒷모습, 그 외(아래·세로 옆)는 정면
+        if abs(dy) > abs(dx) and dy < 0:
+            return "back"
+        return "front"
 
     def _advance_animation(self, dt):
         """
