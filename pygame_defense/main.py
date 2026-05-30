@@ -30,6 +30,9 @@ def shop_slot_rect(i):
 START_BTN_RECT = pygame.Rect(SLOT_X, 628, SLOT_W, 64)            # 하단 '학기 시작' 버튼
 MENU_BTN_RECT = pygame.Rect(SIDEBAR_X + SIDEBAR_WIDTH - 72, 16, 56, 28)  # 우상단 메뉴 버튼
 
+# 배속(빨리감기) 토글 버튼 - 하단 '학기 시작' 버튼 바로 위
+SPEED_BTN_RECT = pygame.Rect(SLOT_X, 596, SLOT_W, 26)
+
 # 홈 복귀 확인 팝업 좌표 (화면 중앙, 그리기/클릭 공유)
 HOME_POPUP_RECT = pygame.Rect(SCREEN_WIDTH // 2 - 230, SCREEN_HEIGHT // 2 - 110, 460, 220)
 HOME_YES_RECT = pygame.Rect(SCREEN_WIDTH // 2 - 140, SCREEN_HEIGHT // 2 + 20, 100, 48)
@@ -674,10 +677,14 @@ def main():
     # 홈 복귀 확인 팝업창 활성화 상태 플래그
     show_home_popup = False
 
+    # 게임 배속 (1 = 보통 속도, 2 = 2배속/빨리감기)
+    game_speed = 1
+
     # 3. 게임 실행 메인 루프 시작
     running = True
     while running:
         dt = clock.tick(FPS)  # 경과 시간(ms) - 모든 타이머/이동에 사용
+        sim_dt = dt * game_speed  # 배속 적용 시뮬레이션 시간 (2배속이면 dt×2)
         mouse_pos = pygame.mouse.get_pos()
 
         # ----------------------------------------------------
@@ -834,6 +841,13 @@ def main():
                                 click_sound.play()
                             continue  # 맵이나 상점 클릭 간섭 차단
 
+                        # 배속(빨리감기) 토글 버튼 충돌 감지
+                        if SPEED_BTN_RECT.collidepoint((mx, my)):
+                            game_speed = 2 if game_speed == 1 else 1
+                            if click_sound:
+                                click_sound.play()
+                            continue  # 맵/상점 클릭 간섭 차단
+
                         # 선택된 타워가 있으면 강화/판매 팝업 버튼 클릭부터 처리
                         sel_tower = next((t for t in towers if t.is_selected), None)
                         if sel_tower is not None:
@@ -968,7 +982,7 @@ def main():
             # 플레이 단계인 경우 적들의 스폰 진행
             if stage_state == "PLAYING":
                 if len(spawn_queue) > 0:
-                    spawn_timer += dt  # ms 기반 누적
+                    spawn_timer += sim_dt  # ms 기반 누적 (배속 반영)
                     if spawn_timer >= spawn_cooldown:
                         # 큐에서 적을 한 마리씩 추출하여 스폰
                         enemy_type = spawn_queue.pop(0)
@@ -976,7 +990,7 @@ def main():
                         spawn_timer = 0
                 elif current_stage == 5 and not boss_spawned:
                     # 5단계의 경우 논문 10마리 스폰 후 10초 뒤 최종 보스 스폰
-                    boss_spawn_timer -= dt  # ms 기반 차감
+                    boss_spawn_timer -= sim_dt  # ms 기반 차감 (배속 반영)
                     if boss_spawn_timer <= 0:
                         enemies.append(Enemy("교수님", WAYPOINTS))
                         boss_spawned = True
@@ -995,21 +1009,21 @@ def main():
 
             # 2-1. 모든 적 생명체 좌표 업데이트 (보스 방어타 기절 스킬용 타워 리스트 참조 전달)
             for enemy in enemies:
-                enemy.update(towers, dt)
+                enemy.update(towers, sim_dt)
 
             # 2-2. 모든 방어탑 타겟 조준 및 레이저 공격 연산 (학부생 발사체 리스트 전달)
             for tower in towers:
-                tower.update(enemies, laser_effects, projectiles, dt)
+                tower.update(enemies, laser_effects, projectiles, sim_dt)
 
             # 2-2-2. 아메리카노/서적/논문 발사체(Projectile) 이동 추적 및 충돌 업데이트
             for proj in projectiles:
-                proj.update(dt, enemies, laser_effects)
+                proj.update(sim_dt, enemies, laser_effects)
             projectiles = [p for p in projectiles if p.is_active]
 
             # 2-3. 모든 설치기(트랩) 3초 카운트다운 폭발 감지
             next_traps = []
             for trap in traps:
-                trap.update(enemies, laser_effects, dt)
+                trap.update(enemies, laser_effects, sim_dt)
                 if trap.is_active:
                     next_traps.append(trap)
             traps = next_traps
@@ -1166,7 +1180,7 @@ def main():
                 pygame.draw.circle(explosion_surf, (255, 255, 255, alpha // 3), (int(max_r), int(max_r)), int(r * 0.4))
                 screen.blit(explosion_surf, (ex - max_r, ey - max_r))
                 
-            fx["duration"] -= dt  # ms 기반 차감
+            fx["duration"] -= sim_dt  # ms 기반 차감 (배속 반영)
             if fx["duration"] > 0:
                 next_lasers.append(fx)
         laser_effects = next_lasers
@@ -1206,6 +1220,22 @@ def main():
         
         # 3-5. 시작 및 전투 통제용 하단 버튼
         draw_state_button(screen, stage_state, current_stage, mouse_pos)
+
+        # 3-5-2. 배속(빨리감기) 토글 버튼
+        sp_hover = SPEED_BTN_RECT.collidepoint(mouse_pos)
+        if game_speed == 2:
+            sp_bg = (255, 140, 0) if sp_hover else (255, 160, 40)   # 2배속: 주황 활성
+            sp_label = ">> X 2"
+            sp_tc = (255, 255, 255)
+        else:
+            sp_bg = (240, 244, 248) if sp_hover else (255, 255, 255)  # 1배속: 기본
+            sp_label = ">> X 1"
+            sp_tc = DARK_TEXT
+        pygame.draw.rect(screen, sp_bg, SPEED_BTN_RECT, 0, 6)
+        pygame.draw.rect(screen, (206, 212, 218), SPEED_BTN_RECT, 1, 6)
+        sp_font = load_font("cute_font/Maplestory Bold.ttf", 12, bold=True)
+        sp_surf = sp_font.render(sp_label, True, sp_tc)
+        screen.blit(sp_surf, sp_surf.get_rect(center=SPEED_BTN_RECT.center))
 
         # 3-6. 준비 기간 알림 깜빡이 텍스트 배너 (라이트 테마 보정)
         if stage_state in ["WAITING", "COMPLETED"]:
