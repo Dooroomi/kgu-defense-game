@@ -2,7 +2,8 @@
 import os
 import pygame
 import math
-from settings import GRAY, WAYPOINTS
+from settings import GRAY
+import settings  # 활성 길(settings.WAYPOINTS)을 동적으로 읽기 위함 (난이도별 맵 교체 대응)
 
 # ==============================================================================
 # 강화 단계(레벨)별 표시 색상 - 노랑(1) > 초록(2) > 빨강(3)
@@ -369,8 +370,8 @@ class Tower:
         """
         best = None
         best_d = float('inf')
-        for i in range(len(WAYPOINTS) - 1):
-            cp = _closest_point_on_segment((self.x, self.y), WAYPOINTS[i], WAYPOINTS[i + 1])
+        for i in range(len(settings.WAYPOINTS) - 1):
+            cp = _closest_point_on_segment((self.x, self.y), settings.WAYPOINTS[i], settings.WAYPOINTS[i + 1])
             d = math.hypot(cp[0] - self.x, cp[1] - self.y)
             if d < best_d:
                 best_d = d

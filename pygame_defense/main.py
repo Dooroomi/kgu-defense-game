@@ -3,11 +3,12 @@ import pygame
 import sys
 import math
 import os
+import settings  # 활성 길(settings.WAYPOINTS) 동적 갱신용
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS,
     MAP_WIDTH, SIDEBAR_X, SIDEBAR_WIDTH,
     DARK_GRAY, LIGHT_GRAY, WAYPOINT_COLOR,
-    WAYPOINTS, CYAN, PURPLE, PINK, ORANGE,
+    WAYPOINTS, MAPS, CYAN, PURPLE, PINK, ORANGE,
     LIGHT_BG, LIGHT_PATH, DARK_TEXT, SIDEBAR_BG, SIDEBAR_BORDER,
     GOLD, WHITE
 )
@@ -37,6 +38,14 @@ SPEED_BTN_RECT = pygame.Rect(SLOT_X, 596, SLOT_W, 26)
 HOME_POPUP_RECT = pygame.Rect(SCREEN_WIDTH // 2 - 230, SCREEN_HEIGHT // 2 - 110, 460, 220)
 HOME_YES_RECT = pygame.Rect(SCREEN_WIDTH // 2 - 140, SCREEN_HEIGHT // 2 + 20, 100, 48)
 HOME_NO_RECT = pygame.Rect(SCREEN_WIDTH // 2 + 40, SCREEN_HEIGHT // 2 + 20, 100, 48)
+
+# 난이도 선택 화면 버튼 (게임 시작 → 이지/노멀/하드)
+_DIFF_W, _DIFF_H = 480, 96
+_DIFF_X = (SCREEN_WIDTH - _DIFF_W) // 2
+DIFF_EASY_RECT   = pygame.Rect(_DIFF_X, 250, _DIFF_W, _DIFF_H)
+DIFF_NORMAL_RECT = pygame.Rect(_DIFF_X, 372, _DIFF_W, _DIFF_H)
+DIFF_HARD_RECT   = pygame.Rect(_DIFF_X, 494, _DIFF_W, _DIFF_H)
+DIFF_BACK_RECT   = pygame.Rect(40, 40, 140, 52)
 
 # ==============================================================================
 # 글로벌 상태 정의
@@ -118,34 +127,43 @@ def draw_multicolor_title(screen, font, center_x, center_y):
         screen.blit(surf, (current_x, center_y - surf.get_height() // 2))
         current_x += surf.get_width()
 
-# 스테이지 기획 데이터 구성
-STAGE_DATA = {
-    1: {
-        "enemies": ["과제"] * 30,
-        "spawn_interval": 1500,   # 1500ms = 1.5초 간격
-        "bonus": 2000
+# 난이도별 스테이지(웨이브) 데이터 — 난이도마다 몬스터 수/종류가 달라짐
+# EASY: 적게 / NORMAL: 기본(기존 값) / HARD: 많고 빠르게 (스테이지 5 보스 등장은 공통)
+DIFFICULTY_STAGES = {
+    "EASY": {
+        1: {"enemies": ["과제"] * 18, "spawn_interval": 1700, "bonus": 2000},
+        2: {"enemies": ["과제"] * 14 + ["기말고사"] * 6, "spawn_interval": 1500, "bonus": 3000},
+        3: {"enemies": ["과제"] * 10 + ["기말고사"] * 10 + ["논문"] * 3, "spawn_interval": 1350, "bonus": 4000},
+        4: {"enemies": ["기말고사"] * 14 + ["논문"] * 9, "spawn_interval": 1200, "bonus": 5000},
+        5: {"enemies": ["논문"] * 10, "spawn_interval": 1000, "bonus": 0},
     },
-    2: {
-        "enemies": ["과제"] * 20 + ["기말고사"] * 10,
-        "spawn_interval": 1333,   # 1333ms ≈ 1.33초 간격
-        "bonus": 3000
+    "NORMAL": {
+        1: {"enemies": ["과제"] * 30, "spawn_interval": 1500, "bonus": 2000},
+        2: {"enemies": ["과제"] * 20 + ["기말고사"] * 10, "spawn_interval": 1333, "bonus": 3000},
+        3: {"enemies": ["과제"] * 15 + ["기말고사"] * 15 + ["논문"] * 5, "spawn_interval": 1167, "bonus": 4000},
+        4: {"enemies": ["기말고사"] * 20 + ["논문"] * 15, "spawn_interval": 1000, "bonus": 5000},
+        5: {"enemies": ["논문"] * 15, "spawn_interval": 833, "bonus": 0},
     },
-    3: {
-        "enemies": ["과제"] * 15 + ["기말고사"] * 15 + ["논문"] * 5,
-        "spawn_interval": 1167,   # 1167ms ≈ 1.17초 간격
-        "bonus": 4000
+    "HARD": {
+        1: {"enemies": ["과제"] * 40, "spawn_interval": 1200, "bonus": 2000},
+        2: {"enemies": ["과제"] * 28 + ["기말고사"] * 18, "spawn_interval": 1100, "bonus": 3000},
+        3: {"enemies": ["과제"] * 20 + ["기말고사"] * 22 + ["논문"] * 10, "spawn_interval": 950, "bonus": 4000},
+        4: {"enemies": ["기말고사"] * 28 + ["논문"] * 24, "spawn_interval": 800, "bonus": 5000},
+        5: {"enemies": ["논문"] * 24, "spawn_interval": 666, "bonus": 0},
     },
-    4: {
-        "enemies": ["기말고사"] * 20 + ["논문"] * 15,
-        "spawn_interval": 1000,   # 1000ms = 1.0초 간격
-        "bonus": 5000
-    },
-    5: {
-        "enemies": ["논문"] * 15,
-        "spawn_interval": 833,    # 833ms ≈ 0.83초 간격
-        "bonus": 0
-    }
 }
+
+
+def apply_difficulty(diff):
+    """
+    선택 난이도(diff)에 맞춰 활성 길(WAYPOINTS)을 교체하고 스테이지 데이터를 반환.
+    main.py 전역 WAYPOINTS와 settings.WAYPOINTS를 함께 갱신해
+    draw_path·배치판정·타워방향(towers.base)이 모두 같은 길을 보게 한다.
+    """
+    global WAYPOINTS
+    WAYPOINTS = MAPS[diff]["waypoints"]
+    settings.WAYPOINTS = WAYPOINTS
+    return DIFFICULTY_STAGES[diff]
 
 # 상점 품목 데이터 구성
 SHOP_ITEMS = [
@@ -667,7 +685,11 @@ def main():
     spawn_cooldown = 90
     boss_spawn_timer = 10000  # 10초 대기 (10000ms)
     boss_spawned = False
-    
+
+    # 난이도(이지/노멀/하드) 및 현재 난이도의 스테이지 데이터 (게임 시작 시 교체)
+    current_difficulty = "NORMAL"
+    stage_data = apply_difficulty(current_difficulty)
+
     # 구매를 위해 상점에서 선택된 현재 타워/트랩 종류 식별 문자열
     selected_item = None
     
@@ -714,6 +736,8 @@ def main():
                             # 비밀코드 'loveprof' 매칭 검사 및 이스터에그 발동
                             if cheat_input == "loveprof":
                                 game_state = "PLAYING"
+                                current_difficulty = "NORMAL"
+                                stage_data = apply_difficulty(current_difficulty)
                                 current_stage = 5
                                 scholarship_points = 150000
                                 enemies = []
@@ -734,8 +758,8 @@ def main():
                         # 스페이스바 키 입력으로 웨이브 단계 시작
                         if stage_state in ["WAITING", "COMPLETED"]:
                             stage_state = "PLAYING"
-                            spawn_queue = list(STAGE_DATA[current_stage]["enemies"])
-                            spawn_cooldown = STAGE_DATA[current_stage]["spawn_interval"]
+                            spawn_queue = list(stage_data[current_stage]["enemies"])
+                            spawn_cooldown = stage_data[current_stage]["spawn_interval"]
                             spawn_timer = 0
                             if current_stage == 5:
                                 boss_spawn_timer = 2500 # 대폭 축소 (2.5초 = 2500ms)
@@ -825,12 +849,48 @@ def main():
                         
                     if game_state == "START_SCREEN":
                         if start_btn_rect.collidepoint((mx, my)):
-                            game_state = "PLAYING"
-                            play_music("music/game_bgm.mp3")
+                            game_state = "DIFFICULTY_SELECT"  # 난이도 선택 화면으로 이동
                             if click_sound:
                                 click_sound.play()
                         elif exit_btn_rect.collidepoint((mx, my)):
                             running = False
+
+                    elif game_state == "DIFFICULTY_SELECT":
+                        chosen = None
+                        if DIFF_EASY_RECT.collidepoint((mx, my)):
+                            chosen = "EASY"
+                        elif DIFF_NORMAL_RECT.collidepoint((mx, my)):
+                            chosen = "NORMAL"
+                        elif DIFF_HARD_RECT.collidepoint((mx, my)):
+                            chosen = "HARD"
+                        elif DIFF_BACK_RECT.collidepoint((mx, my)):
+                            game_state = "START_SCREEN"
+                            if click_sound:
+                                click_sound.play()
+
+                        if chosen is not None:
+                            # 난이도 적용: 길/스테이지 교체 + 게임 상태 완전 초기화
+                            current_difficulty = chosen
+                            stage_data = apply_difficulty(chosen)
+                            current_credits = 4.5
+                            scholarship_points = 15000
+                            current_stage = 1
+                            stage_state = "WAITING"
+                            enemies = []
+                            towers = []
+                            traps = []
+                            projectiles = []
+                            laser_effects = []
+                            spawn_queue = []
+                            spawn_timer = 0
+                            boss_spawned = False
+                            victory_triggered = False
+                            selected_item = None
+                            game_speed = 1
+                            game_state = "PLAYING"
+                            play_music("music/game_bgm.mp3")
+                            if click_sound:
+                                click_sound.play()
                             
                     elif game_state == "PLAYING":
                         # 우측 상단 메뉴 버튼 충돌 감지
@@ -899,8 +959,8 @@ def main():
                             clicked_shop_slot = True
                             if stage_state in ["WAITING", "COMPLETED"]:
                                 stage_state = "PLAYING"
-                                spawn_queue = list(STAGE_DATA[current_stage]["enemies"])
-                                spawn_cooldown = STAGE_DATA[current_stage]["spawn_interval"]
+                                spawn_queue = list(stage_data[current_stage]["enemies"])
+                                spawn_cooldown = stage_data[current_stage]["spawn_interval"]
                                 spawn_timer = 0
                                 if current_stage == 5:
                                     boss_spawn_timer = 2500 # 대폭 축소 (2.5초 = 2500ms)
@@ -1002,7 +1062,7 @@ def main():
                             stage_state = "VICTORY"
                     else:
                         # 스테이지 클리어 보너스 지급 및 상태 변경
-                        bonus = STAGE_DATA[current_stage]["bonus"]
+                        bonus = stage_data[current_stage]["bonus"]
                         scholarship_points += bonus
                         current_stage += 1
                         stage_state = "COMPLETED"
@@ -1100,6 +1160,41 @@ def main():
             pygame.display.flip()
             continue
             
+        # 난이도 선택 화면 렌더링
+        if game_state == "DIFFICULTY_SELECT":
+            if title_bg:
+                screen.blit(title_bg, (0, 0))
+            else:
+                screen.fill(DARK_GRAY)
+            ds_overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            ds_overlay.fill((0, 0, 0, 150))
+            screen.blit(ds_overlay, (0, 0))
+
+            ds_title_font = load_font("cute_font/Maplestory Bold.ttf", 56, bold=True)
+            ds_t = ds_title_font.render("난이도 선택", True, WHITE)
+            screen.blit(ds_t, ds_t.get_rect(center=(SCREEN_WIDTH // 2, 150)))
+
+            ds_btn_font = load_font("cute_font/Maplestory Bold.ttf", 40, bold=True)
+            for ds_rect, ds_key, ds_col in [
+                (DIFF_EASY_RECT, "EASY", (40, 167, 69)),
+                (DIFF_NORMAL_RECT, "NORMAL", (212, 175, 55)),
+                (DIFF_HARD_RECT, "HARD", (220, 53, 69)),
+            ]:
+                ds_hov = ds_rect.collidepoint(mouse_pos)
+                ds_bg = tuple(min(255, c + 35) for c in ds_col) if ds_hov else ds_col
+                pygame.draw.rect(screen, ds_bg, ds_rect, 0, 14)
+                pygame.draw.rect(screen, WHITE, ds_rect, 3 if ds_hov else 1, 14)
+                ds_lbl = ds_btn_font.render(ds_key, True, WHITE)
+                screen.blit(ds_lbl, ds_lbl.get_rect(center=ds_rect.center))
+
+            ds_back_hov = DIFF_BACK_RECT.collidepoint(mouse_pos)
+            ds_back_font = load_font("cute_font/Maplestory Bold.ttf", 24, bold=True)
+            ds_back_txt = ds_back_font.render("← 뒤로", True, GOLD if ds_back_hov else WHITE)
+            screen.blit(ds_back_txt, ds_back_txt.get_rect(center=DIFF_BACK_RECT.center))
+
+            pygame.display.flip()
+            continue
+
         screen.fill(LIGHT_BG)
 
         # 맵 도로망 밑 그리기
@@ -1217,6 +1312,12 @@ def main():
 
         # 3-4. 우측 상점 패널 렌더링
         draw_shop(screen, font, mouse_pos, selected_item, current_stage, len(enemies) + len(spawn_queue))
+
+        # 3-4-2. 현재 난이도 표시 (학점 정보 아래 우측 / 글자색만: EASY 초록·NORMAL 주황·HARD 빨강)
+        _diff_text_colors = {"EASY": (40, 167, 69), "NORMAL": (255, 140, 0), "HARD": (220, 53, 69)}
+        diff_label_font = load_font("cute_font/Maplestory Bold.ttf", 16, bold=True)
+        diff_label_txt = diff_label_font.render(current_difficulty, True, _diff_text_colors.get(current_difficulty, (120, 120, 120)))
+        screen.blit(diff_label_txt, diff_label_txt.get_rect(midright=(SIDEBAR_X + SIDEBAR_WIDTH - 18, 110)))
         
         # 3-5. 시작 및 전투 통제용 하단 버튼
         draw_state_button(screen, stage_state, current_stage, mouse_pos)
