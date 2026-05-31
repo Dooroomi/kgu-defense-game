@@ -484,20 +484,7 @@ class Tower:
             lbl_rect = t_label.get_rect(center=(self.x, self.y))
             screen.blit(t_label, lbl_rect)
 
-        # 3. 강화 단계 뱃지 (테두리 없이, 타워 우상단 코너 안쪽에 작은 원형 뱃지로 표시)
-        #    길(도로)과 겹치지 않도록 타워 영역(rect) 안쪽에 그립니다.
-        tier_color = self.get_tier_color()
-        badge_radius = 13
-        badge_center = (self.rect.right - badge_radius, self.rect.top + badge_radius)
-        pygame.draw.circle(screen, tier_color, badge_center, badge_radius)
-        pygame.draw.circle(screen, (255, 255, 255), badge_center, badge_radius, 2)
-
-        try:
-            lv_font = pygame.font.SysFont("malgungothic", 14, bold=True)
-        except:
-            lv_font = pygame.font.Font(None, 18)
-        lv_text = lv_font.render(str(self.level), True, (255, 255, 255))
-        screen.blit(lv_text, lv_text.get_rect(center=badge_center))
+        # (강화 단계 뱃지 제거 — 단계는 스톨/술 색(노랑·초록·빨강)으로 구분)
 
         # 4. 스턴 상태 이펙트 렌더링
         if self.is_stunned:
