@@ -69,6 +69,46 @@ def load_enemy_assets():
             enemy_sprites[key] = []
 
 
+# 보스(교수님) 스프라이트 지연 로드 캐시
+_boss_frames = None
+_boss_loaded = False
+
+
+def load_boss_assets():
+    """
+    보스(교수님) 스프라이트를 한 번만 로드해 96px 박스에 비율 유지 스케일.
+    반환: {"base": Surface|None, "throw": [Surface, ...]}
+      - base : 기본/걷기 그림 (0.png)
+      - throw: 스턴 시전(시험지 던지기) 프레임 [기본, throw_1, throw_2]
+    """
+    global _boss_frames, _boss_loaded
+    if _boss_loaded:
+        return _boss_frames
+    _boss_loaded = True
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    boss_dir = os.path.join(base_dir, "picture", "enemy", "boss")
+
+    def _load(fname):
+        try:
+            img = pygame.image.load(os.path.join(boss_dir, fname)).convert_alpha()
+            bb = img.get_bounding_rect(min_alpha=1)  # 투명 여백 제거
+            if bb.width > 0 and bb.height > 0:
+                img = img.subsurface(bb).copy()
+            target = 96  # 보스 크기 (일반 적 48 / 타워 64보다 큼)
+            scale = target / max(img.get_width(), img.get_height())
+            w = max(1, round(img.get_width() * scale))
+            h = max(1, round(img.get_height() * scale))
+            return pygame.transform.scale(img, (w, h))
+        except Exception as e:
+            print(f"Warning: boss sprite load failed ({fname}): {e}")
+            return None
+
+    base = _load("0.png")
+    throw = [f for f in [base, _load("throw_1.png"), _load("throw_2.png")] if f is not None]
+    _boss_frames = {"base": base, "throw": throw}
+    return _boss_frames
+
+
 class Enemy:
     def __init__(self, enemy_type, waypoints):
         """
@@ -134,6 +174,12 @@ class Enemy:
         self.anim_frame = 0
         self.anim_timer = 0.0
 
+        # 보스 스턴 시전(시험지 던지기) 애니메이션 상태
+        self.is_casting = False      # 시전 중이면 이동을 멈추고 던지기 프레임 재생
+        self.cast_timer = 0.0        # 시전 남은 시간(ms)
+        self.cast_frame = 0          # 던지기 프레임 인덱스
+        self.cast_frame_timer = 0.0
+
     def update(self, towers=None, dt=16.667):
         """
         적 캐릭터의 이동 및 상태 업데이트 메서드.
@@ -160,11 +206,26 @@ class Enemy:
             if self.hp <= self.max_health * 2 / 3 and not self.stun_triggered_66:
                 self.stun_triggered_66 = True
                 self.cast_boss_stun(towers)
+                self._start_cast()
                 
             # 2. 1/3 체력 이하 도달 시 (두 번째 시전)
             if self.hp <= self.max_health * 1 / 3 and not self.stun_triggered_33:
                 self.stun_triggered_33 = True
                 self.cast_boss_stun(towers)
+                self._start_cast()
+
+        # 보스가 시전(시험지 던지기) 중이면 잠깐 멈춰서 던지기 프레임만 재생
+        if self.is_boss and self.is_casting:
+            self.cast_timer -= dt
+            throw_frames = load_boss_assets()["throw"]
+            if throw_frames:
+                self.cast_frame_timer += dt
+                if self.cast_frame_timer >= 180.0 and self.cast_frame < len(throw_frames) - 1:
+                    self.cast_frame_timer = 0.0
+                    self.cast_frame += 1
+            if self.cast_timer <= 0:
+                self.is_casting = False
+            return  # 시전 중에는 이동하지 않음
 
         # 다음 목표 웨이포인트가 남아있는지 확인
         next_index = self.waypoint_index + 1
@@ -194,6 +255,13 @@ class Enemy:
             # 방향 벡터 정규화 및 이동 처리
             self.x += (dx / distance) * step
             self.y += (dy / distance) * step
+
+    def _start_cast(self):
+        """보스 스턴 시전(시험지 던지기) 애니메이션 시작 — 잠깐 멈춰서 던진다."""
+        self.is_casting = True
+        self.cast_timer = 700.0     # 약 0.7초간 멈춰서 시험지 던짐
+        self.cast_frame = 0
+        self.cast_frame_timer = 0.0
 
     def cast_boss_stun(self, towers):
         """
@@ -240,6 +308,9 @@ class Enemy:
         if not self.is_alive:
             return
 
+        # 보스는 그림/체력바/이름표를 함께 위로 올려 그린다 (값 키우면 더 위로)
+        boss_raise = 24 if self.is_boss else 0
+
         # 1. 적 캐릭터 본체 및 애니메이션 그리기
         if self.enemy_type in ["과제", "기말고사", "논문"]:
             load_enemy_assets()
@@ -253,28 +324,40 @@ class Enemy:
                 pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
                 pygame.draw.circle(screen, (40, 10, 15), (int(self.x), int(self.y)), self.radius, 2)
         else:
-            # 보스(교수님) 또는 기타 정의되지 않은 적 타입: 기존 원형 렌더링 유지
-            pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
-            pygame.draw.circle(screen, (40, 10, 15), (int(self.x), int(self.y)), self.radius, 2)
-
-            # 보스 장식 및 텍스트 렌더링 (이름표가 위에 추가되더라도 기존 본체 내부 텍스트도 유지)
             if self.is_boss:
+                boss = load_boss_assets()
+                # 아우라(빨간 오라) — 보스 존재감
                 pulse = int(8 * math.sin(pygame.time.get_ticks() * 0.01))
-                # 아우라 효과
                 pygame.draw.circle(screen, (255, 50, 50), (int(self.x), int(self.y)), self.radius + 10 + pulse, 3)
-                try:
-                    boss_font = pygame.font.SysFont("malgungothic", 18, bold=True)
-                except:
-                    boss_font = pygame.font.Font(None, 24)
-                text = boss_font.render("교수님", True, (255, 255, 255))
-                rect = text.get_rect(center=(int(self.x), int(self.y)))
-                screen.blit(text, rect)
+
+                # 시전 중이면 던지기 프레임, 평소엔 기본 그림 + 거들먹 걷기(좌우 으쓱/위아래 까딱)
+                if self.is_casting and boss["throw"]:
+                    sprite = boss["throw"][min(self.cast_frame, len(boss["throw"]) - 1)]
+                    sway_x, bob_y = 0, 0
+                else:
+                    sprite = boss["base"]
+                    t = pygame.time.get_ticks() * 0.006
+                    sway_x = int(4 * math.sin(t))         # 좌우 으쓱
+                    bob_y = int(3 * abs(math.sin(t)))      # 위아래 까딱
+
+                if sprite is not None:
+                    rect = sprite.get_rect(center=(int(self.x) + sway_x, int(self.y) - bob_y - boss_raise))
+                    screen.blit(sprite, rect)
+                else:
+                    # 폴백: 그림 없으면 기존 빨간 원
+                    pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
+                    pygame.draw.circle(screen, (40, 10, 15), (int(self.x), int(self.y)), self.radius, 2)
+                # (이름표는 아래 공용 이름표 코드에서 그려짐 — 중복 제거)
+            else:
+                # 기타 정의되지 않은 적: 기존 원형
+                pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
+                pygame.draw.circle(screen, (40, 10, 15), (int(self.x), int(self.y)), self.radius, 2)
 
         # 2. 상단 체력바(Health Bar) 렌더링
         bar_width = 80 if self.is_boss else 50
         bar_height = 10 if self.is_boss else 6
         bar_x = int(self.x) - (bar_width // 2)
-        bar_y = int(self.y) - self.radius - 16
+        bar_y = int(self.y) - self.radius - 16 - boss_raise
         
         # 체력 비율 계산
         health_ratio = self.hp / self.max_health if self.max_health > 0 else 0
