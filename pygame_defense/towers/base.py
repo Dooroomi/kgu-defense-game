@@ -370,12 +370,13 @@ class Tower:
         """
         best = None
         best_d = float('inf')
-        for i in range(len(settings.WAYPOINTS) - 1):
-            cp = _closest_point_on_segment((self.x, self.y), settings.WAYPOINTS[i], settings.WAYPOINTS[i + 1])
-            d = math.hypot(cp[0] - self.x, cp[1] - self.y)
-            if d < best_d:
-                best_d = d
-                best = cp
+        for _path in settings.PATHS:
+            for i in range(len(_path) - 1):
+                cp = _closest_point_on_segment((self.x, self.y), _path[i], _path[i + 1])
+                d = math.hypot(cp[0] - self.x, cp[1] - self.y)
+                if d < best_d:
+                    best_d = d
+                    best = cp
         if best is None:
             return "front"
         dx = best[0] - self.x

@@ -3,12 +3,13 @@ import pygame
 import sys
 import math
 import os
+import random
 import settings  # 활성 길(settings.WAYPOINTS) 동적 갱신용
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS,
     MAP_WIDTH, SIDEBAR_X, SIDEBAR_WIDTH,
     DARK_GRAY, LIGHT_GRAY, WAYPOINT_COLOR,
-    WAYPOINTS, MAPS, CYAN, PURPLE, PINK, ORANGE,
+    WAYPOINTS, PATHS, MAPS, CYAN, PURPLE, PINK, ORANGE,
     LIGHT_BG, LIGHT_PATH, DARK_TEXT, SIDEBAR_BG, SIDEBAR_BORDER,
     GOLD, WHITE
 )
@@ -160,8 +161,10 @@ def apply_difficulty(diff):
     main.py 전역 WAYPOINTS와 settings.WAYPOINTS를 함께 갱신해
     draw_path·배치판정·타워방향(towers.base)이 모두 같은 길을 보게 한다.
     """
-    global WAYPOINTS
-    WAYPOINTS = MAPS[diff]["waypoints"]
+    global WAYPOINTS, PATHS
+    PATHS = MAPS[diff]["paths"]          # 여러 경로(리스트의 리스트)
+    WAYPOINTS = PATHS[0]                  # 첫 경로(하위호환/타일 기준)
+    settings.PATHS = PATHS
     settings.WAYPOINTS = WAYPOINTS
     return DIFFICULTY_STAGES[diff]
 
@@ -242,67 +245,57 @@ def is_valid_placement(mx, my, item_type, towers, traps):
     # 4. 도로(Waypoint) 선분과의 충돌 검증 (타워 설치 제한, 도로 64px 기준)
     # 설치기(트랩)는 도로 위에도 설치할 수 있도록 예외 처리
     if item_type != "논문 작성 중인 박사":
-        for i in range(len(WAYPOINTS) - 1):
-            if dist_to_segment((mx, my), WAYPOINTS[i], WAYPOINTS[i+1]) < 48:
-                return False
+        for _path in PATHS:
+            for i in range(len(_path) - 1):
+                if dist_to_segment((mx, my), _path[i], _path[i+1]) < 48:
+                    return False
                 
     return True
 
 def draw_path(screen):
     """
-    적들이 이동하는 Waypoint 경로를 path_tile.png 이미지를 이용해 반복 타일링하여 렌더링합니다.
+    적들이 이동하는 경로(여러 개 가능)를 path_tile.png로 반복 타일링하여 렌더링합니다.
     """
-    if len(WAYPOINTS) < 2:
-        return
-        
     # path_tile 이미지가 성공적으로 로드된 경우 이미지 기반 반복 타일링 렌더링 진행
     if path_tile:
         tile_w = path_tile.get_width()
         tile_h = path_tile.get_height()
-        
-        # 도로 두께 및 간격(step)에 맞게 촘촘하게 렌더링하도록 설정 (타일 크기의 적절한 최소 크기로 step 계산)
         step = max(8, min(tile_w, tile_h) // 2)
         if step < 1:
             step = 10
-            
-        for i in range(len(WAYPOINTS) - 1):
-            p1 = WAYPOINTS[i]
-            p2 = WAYPOINTS[i+1]
-            
-            dx = p2[0] - p1[0]
-            dy = p2[1] - p1[1]
-            dist = math.hypot(dx, dy)
-            
-            if dist == 0:
-                continue
-                
-            vx = dx / dist
-            vy = dy / dist
-            
-            # 길을 연속된 타일로 촘촘히 blit
-            curr_dist = 0.0
-            while curr_dist <= dist:
-                tx = p1[0] + vx * curr_dist
-                ty = p1[1] + vy * curr_dist
-                screen.blit(path_tile, (int(tx - tile_w / 2), int(ty - tile_h / 2)))
-                curr_dist += step
-                
-            # 각 세그먼트의 끝점에 정밀하게 한번 더 blit
-            screen.blit(path_tile, (int(p2[0] - tile_w / 2), int(p2[1] - tile_h / 2)))
-            
-    else:
-        # 폴백: path_tile.png가 없을 때 기존의 세련된 연회색 2중 레이어 도로 렌더링
-        # 도로 양쪽의 어두운 경계선 레이어 효과 (두께 72px)
-        pygame.draw.lines(screen, (222, 226, 230), False, WAYPOINTS, 72)
-        # 도로 본체 (두께 64px, 라이트 그레이)
-        pygame.draw.lines(screen, LIGHT_PATH, False, WAYPOINTS, 64)
-        # 도로 안쪽 중앙 유도선 (두께 3px)
-        pygame.draw.lines(screen, (173, 181, 189), False, WAYPOINTS, 3)
 
-        # 각 회전 구간(Waypoint 관절) 마다 원형 노드 배치
-        for wp in WAYPOINTS:
-            pygame.draw.circle(screen, WAYPOINT_COLOR, wp, 10)
-            pygame.draw.circle(screen, DARK_TEXT, wp, 11, 1)
+        for _path in PATHS:
+            if len(_path) < 2:
+                continue
+            for i in range(len(_path) - 1):
+                p1 = _path[i]
+                p2 = _path[i + 1]
+                dx = p2[0] - p1[0]
+                dy = p2[1] - p1[1]
+                dist = math.hypot(dx, dy)
+                if dist == 0:
+                    continue
+                vx = dx / dist
+                vy = dy / dist
+                curr_dist = 0.0
+                while curr_dist <= dist:
+                    tx = p1[0] + vx * curr_dist
+                    ty = p1[1] + vy * curr_dist
+                    screen.blit(path_tile, (int(tx - tile_w / 2), int(ty - tile_h / 2)))
+                    curr_dist += step
+                # 세그먼트 끝점 정밀 보정
+                screen.blit(path_tile, (int(p2[0] - tile_w / 2), int(p2[1] - tile_h / 2)))
+    else:
+        # 폴백: path_tile.png가 없을 때 연회색 2중 레이어 도로 렌더링
+        for _path in PATHS:
+            if len(_path) < 2:
+                continue
+            pygame.draw.lines(screen, (222, 226, 230), False, _path, 72)
+            pygame.draw.lines(screen, LIGHT_PATH, False, _path, 64)
+            pygame.draw.lines(screen, (173, 181, 189), False, _path, 3)
+            for wp in _path:
+                pygame.draw.circle(screen, WAYPOINT_COLOR, wp, 10)
+                pygame.draw.circle(screen, DARK_TEXT, wp, 11, 1)
 
 def draw_shop(screen, font, mouse_pos, selected_item, current_stage, rem_enemies_count):
     """
@@ -476,9 +469,10 @@ def _popup_overlaps_path(panel):
     ys = list(range(panel.top, panel.bottom, step)) + [panel.bottom]
     for px in xs:
         for py in ys:
-            for i in range(len(WAYPOINTS) - 1):
-                if dist_to_segment((px, py), WAYPOINTS[i], WAYPOINTS[i + 1]) < road_half:
-                    return True
+            for _path in PATHS:
+                for i in range(len(_path) - 1):
+                    if dist_to_segment((px, py), _path[i], _path[i + 1]) < road_half:
+                        return True
     return False
 
 def get_tower_popup_rects(tower):
@@ -1046,13 +1040,13 @@ def main():
                     if spawn_timer >= spawn_cooldown:
                         # 큐에서 적을 한 마리씩 추출하여 스폰
                         enemy_type = spawn_queue.pop(0)
-                        enemies.append(Enemy(enemy_type, WAYPOINTS))
+                        enemies.append(Enemy(enemy_type, random.choice(PATHS)))
                         spawn_timer = 0
                 elif current_stage == 5 and not boss_spawned:
                     # 5단계의 경우 논문 10마리 스폰 후 10초 뒤 최종 보스 스폰
                     boss_spawn_timer -= sim_dt  # ms 기반 차감 (배속 반영)
                     if boss_spawn_timer <= 0:
-                        enemies.append(Enemy("교수님", WAYPOINTS))
+                        enemies.append(Enemy("교수님", random.choice(PATHS)))
                         boss_spawned = True
                 
                 # 스폰 큐가 비었고 최종 보스도 스폰되었으며(5단계의 경우) 화면에 적이 모두 제거되었을 때 클리어 처리
