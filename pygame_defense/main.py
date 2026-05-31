@@ -201,7 +201,7 @@ SHOP_ITEMS = [
         "range": 130,
         "type": "trap",
         "color": ORANGE,
-        "desc": "설치형 트랩, 3초 후 또는 접촉 시 대폭발"
+        "desc": "설치형 트랩, 3초 후 대폭발"
     }
 ]
 
@@ -1243,9 +1243,7 @@ def main():
                 end = fx["end"]
                 r = fx["splash_radius"]
                 
-                # 타격 지점까지 줄기 사격선
-                pygame.draw.line(screen, color, start, end, 3)
-                pygame.draw.line(screen, (255, 255, 255), start, end, 1)
+                # (레이저 줄기 제거: 책 투사체와 겹쳐 보여서 그리지 않음 — 충격파만 표시)
                 
                 # 구형 충격파 팽창 효과 연출
                 splash_surf = pygame.Surface((int(r * 2), int(r * 2)), pygame.SRCALPHA)

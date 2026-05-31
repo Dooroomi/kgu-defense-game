@@ -1,13 +1,43 @@
 # towers/trap.py
+import os
 import pygame
 import math
 from settings import ORANGE
 
 
+# 트랩 스프라이트('논문 작성 중인 박사') 지연 로드 + 캐시
+_trap_sprite = None
+_trap_sprite_loaded = False
+
+
+def _get_trap_sprite():
+    """picture/towers/trap/0.png 를 한 번만 로드해 64px 박스에 맞춰 비율 유지 스케일(잘림 없음)."""
+    global _trap_sprite, _trap_sprite_loaded
+    if _trap_sprite_loaded:
+        return _trap_sprite
+    _trap_sprite_loaded = True
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(base_dir, "picture", "towers", "trap", "0.png")
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        bb = img.get_bounding_rect(min_alpha=1)  # 투명 여백 제거
+        if bb.width > 0 and bb.height > 0:
+            img = img.subsurface(bb).copy()
+        target = 64  # 가로/세로 중 큰 쪽을 64px로 맞춤
+        scale = target / max(img.get_width(), img.get_height())
+        w = max(1, round(img.get_width() * scale))
+        h = max(1, round(img.get_height() * scale))
+        _trap_sprite = pygame.transform.scale(img, (w, h))
+    except Exception as e:
+        print(f"Warning: trap sprite load failed from {path} ({e})")
+        _trap_sprite = None
+    return _trap_sprite
+
+
 class Trap:
     """
     설치기(Trap) - '논문 작성 중인 박사'.
-    도로 위에도 설치 가능하며, 3초 뒤 또는 적이 접촉하면 광역 폭발을 일으킵니다.
+    도로 위에도 설치 가능하며, 설치 후 3초가 지나면 광역 폭발을 일으킵니다.
     """
 
     def __init__(self, x, y):
@@ -28,7 +58,8 @@ class Trap:
 
     def update(self, enemies, laser_effects, dt=16.667):
         """
-        폭발 카운트다운 타이머를 깎고, 3초가 지나거나 적이 트랩에 닿으면 대폭발을 일으킵니다.
+        폭발 카운트다운 타이머를 깎고, 시간(3초)이 다 지나면 대폭발을 일으킵니다.
+        적이 닿아도 시간 전에는 터지지 않습니다 — 무조건 타이머가 0이 되어야 폭발.
         dt: 경과 시간(ms). 모든 PC에서 동일한 폭발 타이밍을 보장합니다.
         """
         if not self.is_active:
@@ -36,16 +67,8 @@ class Trap:
 
         self.timer -= dt
 
-        # 적 접촉(터치) 감지
-        touched = False
-        for enemy in enemies:
-            if enemy.is_alive and not enemy.reached_end:
-                dist = math.hypot(enemy.x - self.x, enemy.y - self.y)
-                if dist <= (enemy.radius + self.radius):
-                    touched = True
-                    break
-
-        if self.timer <= 0 or touched:
+        # 타이머가 0 이하가 되면(설치 후 3초 경과) 폭발. 적 접촉으로는 터지지 않음.
+        if self.timer <= 0:
             self.explode(enemies, laser_effects)
 
     def explode(self, enemies, laser_effects):
@@ -84,28 +107,33 @@ class Trap:
         screen.blit(guide_surf, (self.x - self.trigger_radius, self.y - self.trigger_radius))
         pygame.draw.circle(screen, (200, 100, 0), (self.x, self.y), int(self.trigger_radius), 1)
 
-        # 2. 본체 그리기 (주황색 컴퓨터 모니터와 깜박이는 바디)
-        pulse = int(2 * math.sin(pygame.time.get_ticks() * 0.01))
-        draw_radius = self.radius + pulse
+        # 2. 본체 그리기 (스프라이트: 논문 작성 중인 박사 / 그림 없으면 주황 원 폴백)
+        #    폭발 임박(1초 이하)이면 부들부들 떨리는 효과
+        sprite = _get_trap_sprite()
+        shake = int(2 * math.sin(pygame.time.get_ticks() * 0.05)) if self.timer <= 1000 else 0
+        if sprite is not None:
+            rect = sprite.get_rect(center=(self.x + shake, self.y))
+            screen.blit(sprite, rect)
+        else:
+            # 폴백: 기존 주황 원
+            pulse = int(2 * math.sin(pygame.time.get_ticks() * 0.01))
+            draw_radius = self.radius + pulse
+            pygame.draw.circle(screen, self.color, (self.x, self.y), draw_radius)
+            pygame.draw.circle(screen, (40, 20, 0), (self.x, self.y), draw_radius, 2)
+            pygame.draw.circle(screen, (255, 255, 255), (self.x, self.y), draw_radius // 2)
 
-        pygame.draw.circle(screen, self.color, (self.x, self.y), draw_radius)
-        pygame.draw.circle(screen, (40, 20, 0), (self.x, self.y), draw_radius, 2)
-
-        # 내부 코어원
-        pygame.draw.circle(screen, (255, 255, 255), (self.x, self.y), draw_radius // 2)
-
-        # 3. 텍스트 정보 (남은 초 렌더링)
+        # 3. 남은 시간 카운트다운 (스프라이트 위쪽 / 1초 이하면 빨간 경고)
         try:
             trap_font = pygame.font.SysFont("malgungothic", 14, bold=True)
         except:
             trap_font = pygame.font.Font(None, 18)
 
         sec_left = max(0.0, self.timer / 1000.0)
-        time_text = trap_font.render(f"{sec_left:.1f}s", True, (0, 0, 0))
-        t_rect = time_text.get_rect(center=(self.x, self.y))
+        time_color = (220, 53, 69) if self.timer <= 1000 else (40, 20, 0)
+        time_text = trap_font.render(f"{sec_left:.1f}s", True, time_color)
+        t_rect = time_text.get_rect(center=(self.x, self.y - 40))
+        # 가독성용 반투명 흰 배경 띠
+        bg = pygame.Surface((t_rect.width + 8, t_rect.height + 2), pygame.SRCALPHA)
+        bg.fill((255, 255, 255, 200))
+        screen.blit(bg, (t_rect.x - 4, t_rect.y - 1))
         screen.blit(time_text, t_rect)
-
-        # 상단 "작성 중" 라벨
-        label_text = trap_font.render("논문작성중", True, (255, 255, 255))
-        lbl_rect = label_text.get_rect(center=(self.x, self.y - self.radius - 10))
-        screen.blit(label_text, lbl_rect)
