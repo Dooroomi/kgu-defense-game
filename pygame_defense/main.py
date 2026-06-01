@@ -652,6 +652,18 @@ def main():
     
     victory_restart_rect = restart_text_normal.get_rect(center=(MAP_WIDTH // 2, 430))
     victory_menu_rect = menu_text_normal.get_rect(center=(MAP_WIDTH // 2, 520))
+
+    # 게임 오버 화면용 텍스트 및 버튼 정의
+    game_over_btn_font = load_font("cute_font/Maplestory Bold.ttf", 36, bold=True)
+    
+    go_menu_text_normal = game_over_btn_font.render("메인 메뉴", True, DARK_TEXT)
+    go_menu_text_hover = game_over_btn_font.render("메인 메뉴", True, (40, 167, 69)) # 초록색
+    
+    go_exit_text_normal = game_over_btn_font.render("종료하기", True, DARK_TEXT)
+    go_exit_text_hover = game_over_btn_font.render("종료하기", True, (220, 53, 69)) # 빨간색
+    
+    go_menu_rect = go_menu_text_normal.get_rect(center=(MAP_WIDTH // 2, 450))
+    go_exit_rect = go_exit_text_normal.get_rect(center=(MAP_WIDTH // 2, 530))
     
     # 시작 BGM 재생
     play_music("music/title_bgm.mp3")
@@ -665,8 +677,9 @@ def main():
     # 레이저 빔 및 폭발 입자 등의 시각적 특수 효과를 저장하는 리스트
     laser_effects = []
     
-    # 승리 시 오디오 및 초기화 처리를 위한 상태 플래그
+    # 승리/패배 시 오디오 및 초기화 처리를 위한 상태 플래그
     victory_triggered = False
+    gameover_triggered = False
     
     # 글로벌 변수 초기화
     current_credits = 4.5
@@ -711,7 +724,8 @@ def main():
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    running = False
+                    if game_state != "GAME_OVER":
+                        running = False
                 elif event.key == pygame.K_F11:
                     # 전체화면 <-> 창모드 토글 (SCALED라서 좌표/픽셀 유지)
                     pygame.display.toggle_fullscreen()
@@ -744,6 +758,7 @@ def main():
                                 boss_spawn_timer = 2500  # 2.5초 (2500ms)
                                 boss_spawned = False
                                 victory_triggered = False
+                                gameover_triggered = False
                                 stage_state = "WAITING" # WAITING으로 변경하여 웨이브 대기 상태 진입!
                                 play_music("music/boss.mp3")
                                 cheat_input = ""
@@ -786,6 +801,7 @@ def main():
                             spawn_timer = 0
                             boss_spawned = False
                             victory_triggered = False
+                            gameover_triggered = False
                             cheat_input = ""
                             show_home_popup = False
                             play_music("music/title_bgm.mp3")
@@ -816,7 +832,13 @@ def main():
                             spawn_timer = 0
                             boss_spawned = False
                             victory_triggered = False
-                            play_music("music/game_bgm.mp3")
+                            gameover_triggered = False
+                            if current_difficulty == "NORMAL":
+                                play_music("music/SnowyVillage.mp3")
+                            elif current_difficulty == "HARD":
+                                play_music("music/WolfWood.mp3")
+                            else:
+                                play_music("music/game_bgm.mp3")
                             if click_sound:
                                 click_sound.play()
                         elif victory_menu_rect.collidepoint((mx, my)):
@@ -839,6 +861,37 @@ def main():
                             play_music("music/title_bgm.mp3")
                             if click_sound:
                                 click_sound.play()
+                        continue  # Early exit, 다른 맵 클릭 방지
+                        
+                    # 게임 오버 화면에서의 버튼 클릭 인터셉트 처리
+                    if game_state == "GAME_OVER":
+                        if go_menu_rect.collidepoint((mx, my)):
+                            # 메인 화면으로 돌아가기 (모든 데이터 완전 초기화)
+                            current_credits = 4.5
+                            scholarship_points = 15000
+                            current_stage = 1
+                            stage_state = "WAITING"
+                            game_state = "START_SCREEN"
+                            enemies = []
+                            towers = []
+                            traps = []
+                            projectiles = []
+                            laser_effects = []
+                            spawn_queue = []
+                            spawn_timer = 0
+                            boss_spawned = False
+                            victory_triggered = False
+                            gameover_triggered = False
+                            cheat_input = ""
+                            play_music("music/title_bgm.mp3")
+                            if click_sound:
+                                click_sound.play()
+                        elif go_exit_rect.collidepoint((mx, my)):
+                            if click_sound:
+                                click_sound.play()
+                                pygame.time.wait(200) # 사운드가 나올 시간을 줌
+                            pygame.quit()
+                            sys.exit()
                         continue  # Early exit, 다른 맵 클릭 방지
                         
                     if game_state == "START_SCREEN":
@@ -879,10 +932,16 @@ def main():
                             spawn_timer = 0
                             boss_spawned = False
                             victory_triggered = False
+                            gameover_triggered = False
                             selected_item = None
                             game_speed = 1
                             game_state = "PLAYING"
-                            play_music("music/game_bgm.mp3")
+                            if current_difficulty == "NORMAL":
+                                play_music("music/SnowyVillage.mp3")
+                            elif current_difficulty == "HARD":
+                                play_music("music/WolfWood.mp3")
+                            else:
+                                play_music("music/game_bgm.mp3")
                             if click_sound:
                                 click_sound.play()
                             
@@ -1027,6 +1086,20 @@ def main():
             except Exception as e:
                 print(f"Warning: Failed to play victory_narration.mp3 ({e})")
             victory_triggered = True
+
+        # 패배 상태 감지 시 나레이션 음원 1회 재생 및 BGM 즉각 정지
+        if stage_state == "GAME_OVER" and not gameover_triggered:
+            pygame.mixer.music.stop()
+            current_bgm = None
+            try:
+                gameover_sound_path = os.path.join(base_dir, "music", "gameover_narration.mp3")
+                if not os.path.exists(gameover_sound_path):
+                    gameover_sound_path = os.path.join(base_dir, "music", "gmaeover_narration.mp3")
+                gameover_sound = pygame.mixer.Sound(gameover_sound_path)
+                gameover_sound.play(0) # 1회만 재생
+            except Exception as e:
+                print(f"Warning: Failed to play gameover_narration.mp3 ({e})")
+            gameover_triggered = True
 
         # ----------------------------------------------------
         # 2. 게임 상태 업데이트 로직 (학점이 존재하고 PLAYING 상태일 때만 실행)
@@ -1383,11 +1456,9 @@ def main():
             game_over_font = load_font("cute_font/Maplestory Bold.ttf", 42, bold=True)
             game_over_text = game_over_font.render("학사경고 제적 (GAME OVER)", True, (220, 53, 69))
             sub_text = font.render("학점이 0.0에 도달하여 제적되었습니다. 다음 학기에 재수강하세요.", True, DARK_TEXT)
-            exit_text = font.render("ESC 키를 누르면 게임을 종료합니다.", True, (108, 117, 125))
             
             go_rect = game_over_text.get_rect(center=(MAP_WIDTH // 2, SCREEN_HEIGHT // 2 - 40))
             sub_rect = sub_text.get_rect(center=(MAP_WIDTH // 2, SCREEN_HEIGHT // 2 + 10))
-            exit_rect = exit_text.get_rect(center=(MAP_WIDTH // 2, SCREEN_HEIGHT // 2 + 60))
 
             overlay = pygame.Surface((MAP_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             overlay.fill((255, 255, 255, 220)) # 라이트 테마 투명 오버레이
@@ -1395,7 +1466,20 @@ def main():
             
             screen.blit(game_over_text, go_rect)
             screen.blit(sub_text, sub_rect)
-            screen.blit(exit_text, exit_rect)
+            
+            # 메인 메뉴 버튼 그리기
+            is_go_menu_hover = go_menu_rect.collidepoint(mouse_pos)
+            if is_go_menu_hover:
+                screen.blit(go_menu_text_hover, go_menu_rect)
+            else:
+                screen.blit(go_menu_text_normal, go_menu_rect)
+                
+            # 종료하기 버튼 그리기
+            is_go_exit_hover = go_exit_rect.collidepoint(mouse_pos)
+            if is_go_exit_hover:
+                screen.blit(go_exit_text_hover, go_exit_rect)
+            else:
+                screen.blit(go_exit_text_normal, go_exit_rect)
 
         # 3-9. 메인 화면 복귀 확인 팝업창 렌더링
         if show_home_popup:
