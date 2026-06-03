@@ -21,10 +21,9 @@ class MasterTower(Tower):
     is_aoe = True
 
     # 단계별 능력치 표 (공격력 위주 증가) / upgrade_cost = 다음 단계로 갈 때 비용
-    # [테스트용] 강화 비용 전부 1원 (정식 값: 4000 / 8000)
     LEVEL_DATA = {
-        1: {"damage": 5.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 1},
-        2: {"damage": 9.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 1},
+        1: {"damage": 5.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 2000},
+        2: {"damage": 9.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 3000},
         3: {"damage": 15.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 0},
     }
 

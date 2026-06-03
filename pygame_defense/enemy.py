@@ -261,7 +261,7 @@ class Enemy:
                     self.anim_timer = 0.0
                     self.anim_frame = (self.anim_frame + 1) % len(idle)
 
-        # 보스 스킬 조건 검사 (2/3, 1/3 체력) — 교수님=타워 기절 / 악마교수=교수님 5마리 소환
+        # 보스 스킬 조건 검사 (2/3, 1/3 체력) — 교수님=타워 기절 / 악마교수=교수님 3마리 소환
         if self.is_boss:
             if self.hp <= self.max_health * 2 / 3 and not self.stun_triggered_66:
                 self.stun_triggered_66 = True
@@ -320,10 +320,10 @@ class Enemy:
         self.cast_frame_timer = 0.0
 
     def _cast_skill(self, towers):
-        """보스 스킬 시전: 악마교수=교수님 5마리 소환 예약 / 교수님=타워 기절."""
+        """보스 스킬 시전: 악마교수=교수님 3마리 소환 예약 / 교수님=타워 기절."""
         self._start_cast()
         if self.enemy_type == "악마교수":
-            self.summon_pending = 5
+            self.summon_pending = 3
         else:
             self.cast_boss_stun(towers or [])
 

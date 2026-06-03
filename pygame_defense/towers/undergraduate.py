@@ -20,10 +20,9 @@ class UndergraduateTower(Tower):
     is_aoe = False
 
     # 단계별 능력치 표 (공격력 위주 증가) / upgrade_cost = 다음 단계로 갈 때 비용
-    # [테스트용] 강화 비용 전부 1원 (정식 값: 1500 / 3000)
     LEVEL_DATA = {
-        1: {"damage": 3.0, "range": 160.0, "fire_rate": 333, "upgrade_cost": 1},
-        2: {"damage": 6.0, "range": 160.0, "fire_rate": 333, "upgrade_cost": 1},
+        1: {"damage": 3.0, "range": 160.0, "fire_rate": 333, "upgrade_cost": 800},
+        2: {"damage": 6.0, "range": 160.0, "fire_rate": 333, "upgrade_cost": 1200},
         3: {"damage": 10.0, "range": 160.0, "fire_rate": 333, "upgrade_cost": 0},
     }
 
