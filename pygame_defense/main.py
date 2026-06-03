@@ -128,6 +128,9 @@ def draw_multicolor_title(screen, font, center_x, center_y):
         screen.blit(surf, (current_x, center_y - surf.get_height() // 2))
         current_x += surf.get_width()
 
+# 난이도별 시작 자금
+START_MONEY = {"EASY": 15000, "NORMAL": 10000, "HARD": 7000}
+
 # 난이도별 스테이지(웨이브) 데이터 — 난이도마다 몬스터 수/종류가 달라짐
 # EASY: 적게 / NORMAL: 기본(기존 값) / HARD: 많고 빠르게 (스테이지 5 보스 등장은 공통)
 DIFFICULTY_STAGES = {
@@ -193,6 +196,29 @@ def get_map_bg(diff):
             print(f"Warning: map bg load failed ({path}): {e}")
     _map_bg_cache[diff] = bg
     return bg
+
+
+_pillar_frames_cache = None
+
+def get_pillar_frames():
+    """악마교수 타워 파괴 스킬용 기둥 폭발 이펙트 프레임들을 로드(최초 1회)해 반환."""
+    global _pillar_frames_cache
+    if _pillar_frames_cache is not None:
+        return _pillar_frames_cache
+    frames = []
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    d = os.path.join(base_dir, "picture", "effects", "pillar")
+    if os.path.isdir(d):
+        names = [f for f in os.listdir(d) if f.lower().endswith(".png")]
+        names.sort(key=lambda s: int(s.split(".")[0]) if s.split(".")[0].isdigit() else 0)
+        for fn in names:
+            try:
+                img = pygame.image.load(os.path.join(d, fn)).convert_alpha()
+                frames.append(pygame.transform.scale(img, (96, 96)))
+            except Exception as e:
+                print(f"Warning: pillar frame load failed ({fn}): {e}")
+    _pillar_frames_cache = frames
+    return frames
 
 
 def get_victory_ending(credits):
@@ -292,50 +318,108 @@ def is_valid_placement(mx, my, item_type, towers, traps):
                 
     return True
 
-def draw_path(screen):
-    """
-    적들이 이동하는 경로(여러 개 가능)를 path_tile.png로 반복 타일링하여 렌더링합니다.
-    """
-    # path_tile 이미지가 성공적으로 로드된 경우 이미지 기반 반복 타일링 렌더링 진행
-    if path_tile:
-        tile_w = path_tile.get_width()
-        tile_h = path_tile.get_height()
-        step = max(8, min(tile_w, tile_h) // 2)
-        if step < 1:
-            step = 10
+_path_tiles_cache = {}
 
+def get_path_tiles(diff):
+    """난이도별 길 타일 로드. NORMAL=직선+코너(방향 적용), HARD=단일 타일, 그 외=None(색 폴백)."""
+    if diff in _path_tiles_cache:
+        return _path_tiles_cache[diff]
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    d = os.path.join(base_dir, "picture", "path")
+    def _load(name, size=None):
+        try:
+            img = pygame.image.load(os.path.join(d, name)).convert_alpha()
+            if size:
+                img = pygame.transform.scale(img, size)
+            return img
+        except Exception as e:
+            print(f"Warning: path tile load failed ({name}): {e}")
+            return None
+    cfg = None
+    if diff == "NORMAL":
+        s = _load("normal_straight.png")
+        c = _load("normal_corner.png")
+        if s and c:
+            cfg = {"mode": "oriented", "straight": s,
+                   "straight_h": pygame.transform.rotate(s, 90), "corner": c}
+    elif diff == "HARD":
+        t = _load("hard.png", (64, 64))
+        if t:
+            cfg = {"mode": "single", "tile": t}
+    _path_tiles_cache[diff] = cfg
+    return cfg
+
+
+def _seg_dir(a, b):
+    """두 점 사이 단위 방향 (축 정렬 가정: (±1,0) 또는 (0,±1))."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    dist = math.hypot(dx, dy)
+    if dist == 0:
+        return (0, 0)
+    return (round(dx / dist), round(dy / dist))
+
+
+def _blit_tiles_along(screen, tile, p1, p2):
+    """세그먼트 p1→p2를 정확히 64px 간격으로 타일 배치 (겹치지 않게)."""
+    tw, th = tile.get_size()
+    dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+    dist = math.hypot(dx, dy)
+    if dist == 0:
+        return
+    vx, vy = dx / dist, dy / dist
+    steps = int(dist // 64)
+    for k in range(steps + 1):
+        d = k * 64.0
+        tx = p1[0] + vx * d
+        ty = p1[1] + vy * d
+        screen.blit(tile, (int(tx - tw / 2), int(ty - th / 2)))
+
+
+def draw_path(screen, diff):
+    """난이도별 길 렌더링. 타일 이미지가 있으면 타일링, 없으면 색 도로 폴백."""
+    cfg = get_path_tiles(diff)
+
+    # HARD: 단일 타일을 길 전체에 반복
+    if cfg and cfg["mode"] == "single":
+        tile = cfg["tile"]
         for _path in PATHS:
-            if len(_path) < 2:
-                continue
             for i in range(len(_path) - 1):
-                p1 = _path[i]
-                p2 = _path[i + 1]
-                dx = p2[0] - p1[0]
-                dy = p2[1] - p1[1]
-                dist = math.hypot(dx, dy)
-                if dist == 0:
-                    continue
-                vx = dx / dist
-                vy = dy / dist
-                curr_dist = 0.0
-                while curr_dist <= dist:
-                    tx = p1[0] + vx * curr_dist
-                    ty = p1[1] + vy * curr_dist
-                    screen.blit(path_tile, (int(tx - tile_w / 2), int(ty - tile_h / 2)))
-                    curr_dist += step
-                # 세그먼트 끝점 정밀 보정
-                screen.blit(path_tile, (int(p2[0] - tile_w / 2), int(p2[1] - tile_h / 2)))
-    else:
-        # 폴백: path_tile.png가 없을 때 연회색 2중 레이어 도로 렌더링
+                _blit_tiles_along(screen, tile, _path[i], _path[i + 1])
+        return
+
+    # NORMAL: 직선(세로/가로) + 코너(회전)
+    if cfg and cfg["mode"] == "oriented":
+        s_v, s_h, corner = cfg["straight"], cfg["straight_h"], cfg["corner"]
         for _path in PATHS:
-            if len(_path) < 2:
-                continue
-            pygame.draw.lines(screen, (222, 226, 230), False, _path, 72)
-            pygame.draw.lines(screen, LIGHT_PATH, False, _path, 64)
-            pygame.draw.lines(screen, (173, 181, 189), False, _path, 3)
-            for wp in _path:
-                pygame.draw.circle(screen, WAYPOINT_COLOR, wp, 10)
-                pygame.draw.circle(screen, DARK_TEXT, wp, 11, 1)
+            # 1) 직선 타일: 세그먼트가 가로면 가로 타일, 세로면 세로 타일
+            for i in range(len(_path) - 1):
+                p1, p2 = _path[i], _path[i + 1]
+                horizontal = abs(p2[0] - p1[0]) >= abs(p2[1] - p1[1])
+                _blit_tiles_along(screen, s_h if horizontal else s_v, p1, p2)
+            # 2) 코너 타일: 방향 전환 지점에 회전 적용 (기본 개방 {왼,아래})
+            for i in range(1, len(_path) - 1):
+                in_dir = _seg_dir(_path[i - 1], _path[i])
+                out_dir = _seg_dir(_path[i], _path[i + 1])
+                if in_dir == out_dir or in_dir == (0, 0) or out_dir == (0, 0):
+                    continue  # 직진 → 코너 불필요
+                back = (-in_dir[0], -in_dir[1])
+                bx, by = back[0] + out_dir[0], back[1] + out_dir[1]
+                rot = 135.0 - math.degrees(math.atan2(by, bx))
+                ct = pygame.transform.rotate(corner, rot)
+                cw, ch = ct.get_size()
+                screen.blit(ct, (int(_path[i][0] - cw / 2), int(_path[i][1] - ch / 2)))
+        return
+
+    # 폴백(EASY 등): 연회색 2중 레이어 도로
+    for _path in PATHS:
+        if len(_path) < 2:
+            continue
+        pygame.draw.lines(screen, (222, 226, 230), False, _path, 72)
+        pygame.draw.lines(screen, LIGHT_PATH, False, _path, 64)
+        pygame.draw.lines(screen, (173, 181, 189), False, _path, 3)
+        for wp in _path:
+            pygame.draw.circle(screen, WAYPOINT_COLOR, wp, 10)
+            pygame.draw.circle(screen, DARK_TEXT, wp, 11, 1)
 
 def draw_shop(screen, font, mouse_pos, selected_item, current_stage, rem_enemies_count):
     """
@@ -802,6 +886,28 @@ def main():
                                 stage_state = "WAITING" # WAITING으로 변경하여 웨이브 대기 상태 진입!
                                 play_music("music/boss.mp3")
                                 cheat_input = ""
+
+                            # 하드 보스전(악마교수) 바로 시작 비밀코드 'lovedemon'
+                            elif cheat_input == "lovedemon":
+                                game_state = "PLAYING"
+                                current_difficulty = "HARD"
+                                stage_data = apply_difficulty(current_difficulty)
+                                current_stage = 5
+                                scholarship_points = 150000
+                                enemies = []
+                                towers = []
+                                traps = []
+                                projectiles = []
+                                laser_effects = []
+                                spawn_queue = []
+                                spawn_timer = 0
+                                boss_spawn_timer = 2500  # 2.5초 (2500ms)
+                                boss_spawned = False
+                                victory_triggered = False
+                                gameover_triggered = False
+                                stage_state = "WAITING"
+                                play_music("music/boss.mp3")
+                                cheat_input = ""
                 elif event.key == pygame.K_SPACE:
                     if game_state == "PLAYING":
                         # 스페이스바 키 입력으로 웨이브 단계 시작
@@ -859,7 +965,7 @@ def main():
                         if victory_restart_rect.collidepoint((mx, my)):
                             # 다시하기: 모든 데이터 완전 초기화 후 WAITING 대기 모드 기동
                             current_credits = 4.5
-                            scholarship_points = 15000
+                            scholarship_points = START_MONEY[current_difficulty]
                             current_stage = 1
                             stage_state = "WAITING"  # WAITING으로 변경하여 웨이브 대기 상태 진입!
                             game_state = "PLAYING"
@@ -960,7 +1066,7 @@ def main():
                             current_difficulty = chosen
                             stage_data = apply_difficulty(chosen)
                             current_credits = 4.5
-                            scholarship_points = 15000
+                            scholarship_points = START_MONEY[chosen]   # 난이도별 시작 자금
                             current_stage = 1
                             stage_state = "WAITING"
                             enemies = []
@@ -1177,7 +1283,7 @@ def main():
 
             # 2-1. 모든 적 생명체 좌표 업데이트 (보스 스킬용 타워 리스트 참조 전달)
             for enemy in enemies:
-                enemy.update(towers, sim_dt)
+                enemy.update(towers, sim_dt, enemies=enemies)
 
             # 2-1-2. 악마교수 소환 스킬 처리 (대기 중인 소환 → 교수님을 '악마교수 주변'에 생성)
             summoned = []
@@ -1191,6 +1297,20 @@ def main():
                         summoned.append(m)
                     enemy.summon_pending = 0
             enemies.extend(summoned)
+
+            # 2-1-3. 악마교수 타워 파괴 스킬 처리 (랜덤 타워 3개 파괴 + 기둥 이펙트)
+            for enemy in enemies:
+                if getattr(enemy, "destroy_pending", 0) > 0:
+                    n = enemy.destroy_pending
+                    enemy.destroy_pending = 0
+                    if towers:
+                        victims = random.sample(towers, min(n, len(towers)))
+                        for vt in victims:
+                            laser_effects.append({
+                                "type": "pillar", "x": vt.x, "y": vt.y,
+                                "duration": 700.0, "initial_duration": 700.0,
+                            })
+                            towers.remove(vt)
 
             # 2-2. 모든 방어탑 타겟 조준 및 레이저 공격 연산 (학부생 발사체 리스트 전달)
             for tower in towers:
@@ -1228,7 +1348,7 @@ def main():
                     current_credits -= deduct
                     current_credits = round(max(0.0, current_credits), 1)
                 elif not enemy.is_alive:
-                    # 처치 보상 지급 (보스는 reward 0). 승리는 '모든 적 처치' 시 판정.
+                    # 처치 보상 지급 (교수님 2000 / 악마교수 5000). 승리는 '모든 적 처치' 시 판정.
                     scholarship_points += enemy.reward
                 else:
                     next_enemies.append(enemy)
@@ -1320,8 +1440,8 @@ def main():
         if _mbg is not None:
             screen.blit(_mbg, (0, 0))
 
-        # 맵 도로망 밑 그리기
-        draw_path(screen)
+        # 맵 도로망 밑 그리기 (난이도별 길 타일 적용)
+        draw_path(screen, current_difficulty)
 
         # 설치기(트랩) 그리기
         for trap in traps:
@@ -1395,7 +1515,19 @@ def main():
                 pygame.draw.circle(explosion_surf, (255, 215, 0, alpha // 2), (int(max_r), int(max_r)), int(r * 0.7))
                 pygame.draw.circle(explosion_surf, (255, 255, 255, alpha // 3), (int(max_r), int(max_r)), int(r * 0.4))
                 screen.blit(explosion_surf, (ex - max_r, ey - max_r))
-                
+
+            elif fx_type == "pillar":
+                # 악마교수 타워 파괴: 부서진 타워 자리에서 솟구치는 기둥 폭발 이펙트
+                frames = get_pillar_frames()
+                if frames:
+                    init = float(fx.get("initial_duration", 700.0))
+                    elapsed = init - duration
+                    idx = int(elapsed / (init / len(frames)))
+                    idx = max(0, min(len(frames) - 1, idx))
+                    img = frames[idx]
+                    rect = img.get_rect(midbottom=(int(fx["x"]), int(fx["y"]) + 28))
+                    screen.blit(img, rect)
+
             fx["duration"] -= sim_dt  # ms 기반 차감 (배속 반영)
             if fx["duration"] > 0:
                 next_lasers.append(fx)

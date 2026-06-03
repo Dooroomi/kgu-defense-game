@@ -7,6 +7,10 @@ from settings import GREEN, RED
 # 스턴 효과음 로딩 (믹서 기동 오류 방지를 위해 지연 로드 지원)
 stun_sound = None
 
+# 교수님 광역 스턴 공용 쿨다운 — 여러 교수가 동시에 도배하지 않게 한 번에 크게 한 번만
+STUN_COOLDOWN_MS = 4000
+_last_stun_tick = -999999
+
 # 적 애니메이션 스프라이트 및 폰트 지연 로딩 캐시
 enemy_sprites = {}
 name_tag_font = None
@@ -183,7 +187,7 @@ class Enemy:
         elif enemy_type == "교수님":
             hp = 2000.0                     # 보스 체력 2000 상향
             speed = 0.6                     # 속도 매우 느림
-            self.reward = 0                 # 보상 없음
+            self.reward = 2000              # 처치 보상 2000원 (탱키한 미니보스)
             self.is_boss = True
             self.color = (139, 0, 0)        # 다크 레드
             self.stun_triggered_66 = False   # 2/3 체력 스턴 플래그
@@ -191,7 +195,7 @@ class Enemy:
         elif enemy_type == "악마교수":
             hp = 2500.0                     # 하드 전용 보스 (교수님보다 강함)
             speed = 0.6
-            self.reward = 0
+            self.reward = 5000              # 처치 보상 5000원 (최종 보스)
             self.is_boss = True
             self.color = (30, 60, 120)      # 어두운 파랑
             self.stun_triggered_66 = False   # 스킬(소환) 발동 플래그
@@ -230,10 +234,11 @@ class Enemy:
         self.cast_frame = 0          # 던지기 프레임 인덱스
         self.cast_frame_timer = 0.0
 
-        # 악마교수 소환 스킬: main.py가 처리할 소환 대기 수
+        # 악마교수 스킬: main.py가 처리할 소환/파괴 대기 수
         self.summon_pending = 0
+        self.destroy_pending = 0
 
-    def update(self, towers=None, dt=16.667):
+    def update(self, towers=None, dt=16.667, enemies=None):
         """
         적 캐릭터의 이동 및 상태 업데이트 메서드.
         주어진 Waypoint 경로 리스트를 순서대로 추적하여 이동합니다.
@@ -261,14 +266,14 @@ class Enemy:
                     self.anim_timer = 0.0
                     self.anim_frame = (self.anim_frame + 1) % len(idle)
 
-        # 보스 스킬 조건 검사 (2/3, 1/3 체력) — 교수님=타워 기절 / 악마교수=교수님 3마리 소환
+        # 보스 스킬 (2/3, 1/3 체력) — 교수님: 둘 다 타워 기절 / 악마교수: 2/3=교수님 3소환, 1/3=타워 3파괴
         if self.is_boss:
             if self.hp <= self.max_health * 2 / 3 and not self.stun_triggered_66:
                 self.stun_triggered_66 = True
-                self._cast_skill(towers)
+                self._cast_skill(towers, phase=1, enemies=enemies)
             if self.hp <= self.max_health * 1 / 3 and not self.stun_triggered_33:
                 self.stun_triggered_33 = True
-                self._cast_skill(towers)
+                self._cast_skill(towers, phase=2, enemies=enemies)
 
         # 보스가 시전 중이면 잠깐 멈춰서 시전 프레임만 재생 (교수님=던지기 / 악마교수=소환)
         if self.is_boss and self.is_casting:
@@ -319,13 +324,19 @@ class Enemy:
         self.cast_frame = 0
         self.cast_frame_timer = 0.0
 
-    def _cast_skill(self, towers):
-        """보스 스킬 시전: 악마교수=교수님 3마리 소환 예약 / 교수님=타워 기절."""
+    def _cast_skill(self, towers, phase, enemies=None):
+        """보스 스킬 시전. 악마교수: phase1=교수님 3소환 / phase2=타워 3파괴. 교수님: 타워 기절."""
         self._start_cast()
         if self.enemy_type == "악마교수":
-            self.summon_pending = 3
+            if phase == 1:
+                self.summon_pending = 3
+            else:
+                self.destroy_pending = 3
         else:
-            self.cast_boss_stun(towers or [])
+            # 살아있는 교수님 수 × 3개의 서로 다른 타워를 한 번에 기절 (공용 쿨다운으로 도배 방지)
+            alive_profs = sum(1 for e in (enemies or [])
+                              if getattr(e, "enemy_type", "") == "교수님" and e.is_alive)
+            self.cast_boss_stun(towers or [], max(1, alive_profs) * 3)
 
     def _boss_cast_frames(self):
         """현재 보스의 시전(캐스팅) 프레임 리스트."""
@@ -333,11 +344,18 @@ class Enemy:
             return load_demon_boss_assets()["cast"]
         return load_boss_assets()["throw"]
 
-    def cast_boss_stun(self, towers):
+    def cast_boss_stun(self, towers, stun_count=3):
         """
-        교수님의 광역 기절 스킬. 무작위 타워 최대 3개를 동시에 2초간 기절시킵니다.
+        교수님의 광역 기절 스킬. 무작위 타워 최대 stun_count개를 동시에 2초간 기절시킵니다.
+        (악마교수가 여러 교수님을 소환하면 stun_count = 살아있는 교수님 수 × 3)
         """
-        global stun_sound
+        global stun_sound, _last_stun_tick
+        # 공용 쿨다운 중이면 중복 스턴 무시 (여러 교수가 도배하지 않고 한 번에 크게 한 번만)
+        now = pygame.time.get_ticks()
+        if now - _last_stun_tick < STUN_COOLDOWN_MS:
+            return
+        _last_stun_tick = now
+
         if stun_sound is None:
             try:
                 if pygame.mixer.get_init():
@@ -350,14 +368,12 @@ class Enemy:
         if stun_sound:
             stun_sound.play()
             
-        # 기절하지 않은 타워 목록 추출
+        # 기절하지 않은 타워만 대상으로 (이미 스턴된 타워는 제외)
         unstunned = [t for t in towers if not t.is_stunned]
-        if not unstunned:
-            unstunned = list(towers)
-            
+
         if unstunned:
             import random
-            targets = random.sample(unstunned, min(len(unstunned), 3))
+            targets = random.sample(unstunned, min(len(unstunned), stun_count))
             for t in targets:
                 t.is_stunned = True
                 t.stun_timer = 2000  # 2초(2000ms) 기절 적용

@@ -22,9 +22,9 @@ class MasterTower(Tower):
 
     # 단계별 능력치 표 (공격력 위주 증가) / upgrade_cost = 다음 단계로 갈 때 비용
     LEVEL_DATA = {
-        1: {"damage": 5.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 2000},
-        2: {"damage": 9.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 3000},
-        3: {"damage": 15.0, "range": 195.0, "fire_rate": 1000, "upgrade_cost": 0},
+        1: {"damage": 5.0, "range": 195.0, "fire_rate": 900, "upgrade_cost": 2000},
+        2: {"damage": 9.0, "range": 195.0, "fire_rate": 900, "upgrade_cost": 3000},
+        3: {"damage": 15.0, "range": 195.0, "fire_rate": 900, "upgrade_cost": 0},
     }
 
     def attack(self, enemy, enemies, laser_effects, projectiles=None):

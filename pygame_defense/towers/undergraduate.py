@@ -21,9 +21,9 @@ class UndergraduateTower(Tower):
 
     # 단계별 능력치 표 (공격력 위주 증가) / upgrade_cost = 다음 단계로 갈 때 비용
     LEVEL_DATA = {
-        1: {"damage": 3.0, "range": 160.0, "fire_rate": 333, "upgrade_cost": 800},
-        2: {"damage": 6.0, "range": 160.0, "fire_rate": 333, "upgrade_cost": 1200},
-        3: {"damage": 10.0, "range": 160.0, "fire_rate": 333, "upgrade_cost": 0},
+        1: {"damage": 3.0, "range": 160.0, "fire_rate": 1000, "upgrade_cost": 800},
+        2: {"damage": 6.0, "range": 160.0, "fire_rate": 1000, "upgrade_cost": 1200},
+        3: {"damage": 10.0, "range": 160.0, "fire_rate": 1000, "upgrade_cost": 0},
     }
 
     def attack(self, enemy, enemies, laser_effects, projectiles=None):
