@@ -194,6 +194,20 @@ def get_map_bg(diff):
     _map_bg_cache[diff] = bg
     return bg
 
+
+def get_victory_ending(credits):
+    """남은 학점(credits)에 따른 졸업 엔딩 분기 → (제목, 설명)."""
+    if credits >= 4.5:
+        return ("대학원 진학!", f"완벽한 평점 {credits:.1f}! 대학원에 진학합니다.")
+    elif credits >= 4.0:
+        return ("대기업 취직!", f"평점 {credits:.1f}! 대기업에 입사합니다.")
+    elif credits >= 3.5:
+        return ("중견기업 취직!", f"평점 {credits:.1f}! 중견기업에 취직합니다.")
+    elif credits >= 3.0:
+        return ("중소기업 취직!", f"평점 {credits:.1f}! 중소기업에 취직합니다.")
+    else:
+        return ("졸업 성공!", f"평점 {credits:.1f}(으)로 간신히 졸업합니다.")
+
 # 상점 품목 데이터 구성
 SHOP_ITEMS = [
     {
@@ -1473,11 +1487,12 @@ def main():
             overlay.fill((255, 255, 255, 240)) # 아주 선명하고 세련된 라이트 오버레이
             screen.blit(overlay, (0, 0))
 
-            # 타이틀 & 서브텍스트 그리기
-            title_rect = victory_title_text.get_rect(center=(MAP_WIDTH // 2, 250))
-            sub_rect = victory_sub_text.get_rect(center=(MAP_WIDTH // 2, 330))
-            screen.blit(victory_title_text, title_rect)
-            screen.blit(victory_sub_text, sub_rect)
+            # 남은 학점에 따른 졸업 엔딩 분기 (제목 + 설명)
+            ev_title, ev_sub = get_victory_ending(current_credits)
+            ev_title_surf = victory_title_font.render(ev_title, True, GOLD)
+            ev_sub_surf = font.render(ev_sub, True, DARK_TEXT)
+            screen.blit(ev_title_surf, ev_title_surf.get_rect(center=(MAP_WIDTH // 2, 250)))
+            screen.blit(ev_sub_surf, ev_sub_surf.get_rect(center=(MAP_WIDTH // 2, 330)))
             
             # 다시하기 버튼
             is_restart_hover = victory_restart_rect.collidepoint(mouse_pos)
