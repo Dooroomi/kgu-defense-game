@@ -109,6 +109,48 @@ def load_boss_assets():
     return _boss_frames
 
 
+# 악마교수(하드 전용 보스) 스프라이트 캐시
+_demon_frames = None
+_demon_loaded = False
+
+
+def load_demon_boss_assets():
+    """악마교수 스프라이트 로드 (96px). 반환: {"idle":[...], "cast":[...], "base":Surface|None}."""
+    global _demon_frames, _demon_loaded
+    if _demon_loaded:
+        return _demon_frames
+    _demon_loaded = True
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    demon_dir = os.path.join(base_dir, "picture", "enemy", "demon")
+
+    def _load_dir(sub):
+        frames = []
+        d = os.path.join(demon_dir, sub)
+        if os.path.isdir(d):
+            files = sorted(
+                (f for f in os.listdir(d) if f.lower().endswith(".png")),
+                key=lambda s: int(s.split(".")[0]) if s.split(".")[0].isdigit() else 0,
+            )
+            for fn in files:
+                try:
+                    img = pygame.image.load(os.path.join(d, fn)).convert_alpha()
+                    bb = img.get_bounding_rect(min_alpha=1)
+                    if bb.width > 0 and bb.height > 0:
+                        img = img.subsurface(bb).copy()
+                    target = 96
+                    scale = target / max(img.get_width(), img.get_height())
+                    img = pygame.transform.scale(img, (max(1, round(img.get_width() * scale)), max(1, round(img.get_height() * scale))))
+                    frames.append(img)
+                except Exception as e:
+                    print(f"Warning: demon frame load failed ({fn}): {e}")
+        return frames
+
+    idle = _load_dir("idle")
+    cast = _load_dir("cast")
+    _demon_frames = {"idle": idle, "cast": cast, "base": idle[0] if idle else None}
+    return _demon_frames
+
+
 class Enemy:
     def __init__(self, enemy_type, waypoints):
         """
@@ -146,6 +188,14 @@ class Enemy:
             self.color = (139, 0, 0)        # 다크 레드
             self.stun_triggered_66 = False   # 2/3 체력 스턴 플래그
             self.stun_triggered_33 = False   # 1/3 체력 스턴 플래그
+        elif enemy_type == "악마교수":
+            hp = 2500.0                     # 하드 전용 보스 (교수님보다 강함)
+            speed = 0.6
+            self.reward = 0
+            self.is_boss = True
+            self.color = (30, 60, 120)      # 어두운 파랑
+            self.stun_triggered_66 = False   # 스킬(소환) 발동 플래그
+            self.stun_triggered_33 = False
         else:
             hp = 3.0
             speed = 2.0
@@ -180,6 +230,9 @@ class Enemy:
         self.cast_frame = 0          # 던지기 프레임 인덱스
         self.cast_frame_timer = 0.0
 
+        # 악마교수 소환 스킬: main.py가 처리할 소환 대기 수
+        self.summon_pending = 0
+
     def update(self, towers=None, dt=16.667):
         """
         적 캐릭터의 이동 및 상태 업데이트 메서드.
@@ -199,28 +252,31 @@ class Enemy:
                 frames = enemy_sprites.get(self.enemy_type)
                 if frames:
                     self.anim_frame = (self.anim_frame + 1) % len(frames)
+        elif self.enemy_type == "악마교수" and not self.is_casting:
+            # 악마교수 idle 4프레임 순환
+            idle = load_demon_boss_assets()["idle"]
+            if idle:
+                self.anim_timer += dt
+                if self.anim_timer >= 160.0:
+                    self.anim_timer = 0.0
+                    self.anim_frame = (self.anim_frame + 1) % len(idle)
 
-        # 보스 광역 기절 스킬 조건 검사 (2/3, 1/3 체력)
-        if self.is_boss and towers:
-            # 1. 2/3 체력 이하 도달 시 (첫 시전)
+        # 보스 스킬 조건 검사 (2/3, 1/3 체력) — 교수님=타워 기절 / 악마교수=교수님 5마리 소환
+        if self.is_boss:
             if self.hp <= self.max_health * 2 / 3 and not self.stun_triggered_66:
                 self.stun_triggered_66 = True
-                self.cast_boss_stun(towers)
-                self._start_cast()
-                
-            # 2. 1/3 체력 이하 도달 시 (두 번째 시전)
+                self._cast_skill(towers)
             if self.hp <= self.max_health * 1 / 3 and not self.stun_triggered_33:
                 self.stun_triggered_33 = True
-                self.cast_boss_stun(towers)
-                self._start_cast()
+                self._cast_skill(towers)
 
-        # 보스가 시전(시험지 던지기) 중이면 잠깐 멈춰서 던지기 프레임만 재생
+        # 보스가 시전 중이면 잠깐 멈춰서 시전 프레임만 재생 (교수님=던지기 / 악마교수=소환)
         if self.is_boss and self.is_casting:
             self.cast_timer -= dt
-            throw_frames = load_boss_assets()["throw"]
-            if throw_frames:
+            cast_frames = self._boss_cast_frames()
+            if cast_frames:
                 self.cast_frame_timer += dt
-                if self.cast_frame_timer >= 180.0 and self.cast_frame < len(throw_frames) - 1:
+                if self.cast_frame_timer >= 180.0 and self.cast_frame < len(cast_frames) - 1:
                     self.cast_frame_timer = 0.0
                     self.cast_frame += 1
             if self.cast_timer <= 0:
@@ -262,6 +318,20 @@ class Enemy:
         self.cast_timer = 700.0     # 약 0.7초간 멈춰서 시험지 던짐
         self.cast_frame = 0
         self.cast_frame_timer = 0.0
+
+    def _cast_skill(self, towers):
+        """보스 스킬 시전: 악마교수=교수님 5마리 소환 예약 / 교수님=타워 기절."""
+        self._start_cast()
+        if self.enemy_type == "악마교수":
+            self.summon_pending = 5
+        else:
+            self.cast_boss_stun(towers or [])
+
+    def _boss_cast_frames(self):
+        """현재 보스의 시전(캐스팅) 프레임 리스트."""
+        if self.enemy_type == "악마교수":
+            return load_demon_boss_assets()["cast"]
+        return load_boss_assets()["throw"]
 
     def cast_boss_stun(self, towers):
         """
@@ -325,29 +395,40 @@ class Enemy:
                 pygame.draw.circle(screen, (40, 10, 15), (int(self.x), int(self.y)), self.radius, 2)
         else:
             if self.is_boss:
-                boss = load_boss_assets()
-                # 아우라(빨간 오라) — 보스 존재감
+                is_demon = self.enemy_type == "악마교수"
+                # 아우라 (악마교수=파랑 / 교수님=빨강)
                 pulse = int(8 * math.sin(pygame.time.get_ticks() * 0.01))
-                pygame.draw.circle(screen, (255, 50, 50), (int(self.x), int(self.y)), self.radius + 10 + pulse, 3)
+                aura = (80, 120, 255) if is_demon else (255, 50, 50)
+                pygame.draw.circle(screen, aura, (int(self.x), int(self.y)), self.radius + 10 + pulse, 3)
 
-                # 시전 중이면 던지기 프레임, 평소엔 기본 그림 + 거들먹 걷기(좌우 으쓱/위아래 까딱)
-                if self.is_casting and boss["throw"]:
-                    sprite = boss["throw"][min(self.cast_frame, len(boss["throw"]) - 1)]
-                    sway_x, bob_y = 0, 0
+                if is_demon:
+                    d = load_demon_boss_assets()
+                    if self.is_casting and d["cast"]:
+                        sprite = d["cast"][min(self.cast_frame, len(d["cast"]) - 1)]
+                        sway_x, bob_y = 0, 0
+                    elif d["idle"]:
+                        sprite = d["idle"][self.anim_frame % len(d["idle"])]
+                        t = pygame.time.get_ticks() * 0.006
+                        sway_x = int(4 * math.sin(t)); bob_y = int(3 * abs(math.sin(t)))
+                    else:
+                        sprite = d["base"]; sway_x, bob_y = 0, 0
                 else:
-                    sprite = boss["base"]
-                    t = pygame.time.get_ticks() * 0.006
-                    sway_x = int(4 * math.sin(t))         # 좌우 으쓱
-                    bob_y = int(3 * abs(math.sin(t)))      # 위아래 까딱
+                    boss = load_boss_assets()
+                    if self.is_casting and boss["throw"]:
+                        sprite = boss["throw"][min(self.cast_frame, len(boss["throw"]) - 1)]
+                        sway_x, bob_y = 0, 0
+                    else:
+                        sprite = boss["base"]
+                        t = pygame.time.get_ticks() * 0.006
+                        sway_x = int(4 * math.sin(t)); bob_y = int(3 * abs(math.sin(t)))
 
                 if sprite is not None:
                     rect = sprite.get_rect(center=(int(self.x) + sway_x, int(self.y) - bob_y - boss_raise))
                     screen.blit(sprite, rect)
                 else:
-                    # 폴백: 그림 없으면 기존 빨간 원
                     pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
                     pygame.draw.circle(screen, (40, 10, 15), (int(self.x), int(self.y)), self.radius, 2)
-                # (이름표는 아래 공용 이름표 코드에서 그려짐 — 중복 제거)
+                # (이름표는 아래 공용 이름표 코드에서 그려짐)
             else:
                 # 기타 정의되지 않은 적: 기존 원형
                 pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)

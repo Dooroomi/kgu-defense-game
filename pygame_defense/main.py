@@ -168,6 +168,32 @@ def apply_difficulty(diff):
     settings.WAYPOINTS = WAYPOINTS
     return DIFFICULTY_STAGES[diff]
 
+
+# 난이도별 맵 배경 이미지 지연 로드 캐시 (맵 영역 1024x720에 맞춰 스케일)
+_map_bg_cache = {}
+
+def get_map_bg(diff):
+    """난이도(diff)의 맵 배경 이미지를 로드해 반환 (없으면 None → 기본 단색 배경)."""
+    if diff in _map_bg_cache:
+        return _map_bg_cache[diff]
+    bg = None
+    path = MAPS.get(diff, {}).get("bg")
+    if path:
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            img = pygame.image.load(os.path.join(base_dir, *path.split("/"))).convert()
+            iw, ih = img.get_size()
+            # 비율 유지하며 맵영역 덮기(cover) → 늘어남 방지. 좌측·하단 기준 크롭(왼쪽 캐릭터 유지)
+            scale = max(MAP_WIDTH / iw, SCREEN_HEIGHT / ih)
+            sw, sh = round(iw * scale), round(ih * scale)
+            scaled = pygame.transform.scale(img, (sw, sh))
+            bg = pygame.Surface((MAP_WIDTH, SCREEN_HEIGHT))
+            bg.blit(scaled, (0, SCREEN_HEIGHT - sh))
+        except Exception as e:
+            print(f"Warning: map bg load failed ({path}): {e}")
+    _map_bg_cache[diff] = bg
+    return bg
+
 # 상점 품목 데이터 구성
 SHOP_ITEMS = [
     {
@@ -1119,7 +1145,8 @@ def main():
                     # 5단계의 경우 논문 10마리 스폰 후 10초 뒤 최종 보스 스폰
                     boss_spawn_timer -= sim_dt  # ms 기반 차감 (배속 반영)
                     if boss_spawn_timer <= 0:
-                        enemies.append(Enemy("교수님", random.choice(PATHS)))
+                        boss_type = "악마교수" if current_difficulty == "HARD" else "교수님"
+                        enemies.append(Enemy(boss_type, random.choice(PATHS)))
                         boss_spawned = True
                 
                 # 스폰 큐가 비었고 최종 보스도 스폰되었으며(5단계의 경우) 화면에 적이 모두 제거되었을 때 클리어 처리
@@ -1134,9 +1161,22 @@ def main():
                         current_stage += 1
                         stage_state = "COMPLETED"
 
-            # 2-1. 모든 적 생명체 좌표 업데이트 (보스 방어타 기절 스킬용 타워 리스트 참조 전달)
+            # 2-1. 모든 적 생명체 좌표 업데이트 (보스 스킬용 타워 리스트 참조 전달)
             for enemy in enemies:
                 enemy.update(towers, sim_dt)
+
+            # 2-1-2. 악마교수 소환 스킬 처리 (대기 중인 소환 → 교수님을 '악마교수 주변'에 생성)
+            summoned = []
+            for enemy in enemies:
+                if getattr(enemy, "summon_pending", 0) > 0:
+                    for _ in range(enemy.summon_pending):
+                        m = Enemy("교수님", enemy.waypoints)      # 보스와 같은 경로 사용
+                        m.x = enemy.x + random.randint(-85, 85)   # 악마교수 주변에 흩뿌려 등장
+                        m.y = enemy.y + random.randint(-65, 65)
+                        m.waypoint_index = enemy.waypoint_index    # 보스 위치부터 이어서 진행
+                        summoned.append(m)
+                    enemy.summon_pending = 0
+            enemies.extend(summoned)
 
             # 2-2. 모든 방어탑 타겟 조준 및 레이저 공격 연산 (학부생 발사체 리스트 전달)
             for tower in towers:
@@ -1166,7 +1206,7 @@ def main():
                         deduct = 1.0
                     elif enemy.enemy_type == "논문":
                         deduct = 1.5
-                    elif enemy.enemy_type == "교수님":
+                    elif enemy.enemy_type in ("교수님", "악마교수"):
                         deduct = 4.5 # 보스는 한마리만 닿아도 게임오버(4.5점 모두 차감)
                     else:
                         deduct = 0.5
@@ -1174,11 +1214,8 @@ def main():
                     current_credits -= deduct
                     current_credits = round(max(0.0, current_credits), 1)
                 elif not enemy.is_alive:
-                    # 최종 보스 교수님 처치 시 장학금 대신 즉시 게임 클리어 처리
-                    if enemy.is_boss:
-                        stage_state = "VICTORY"
-                    else:
-                        scholarship_points += enemy.reward
+                    # 처치 보상 지급 (보스는 reward 0). 승리는 '모든 적 처치' 시 판정.
+                    scholarship_points += enemy.reward
                 else:
                     next_enemies.append(enemy)
             enemies = next_enemies
@@ -1263,6 +1300,11 @@ def main():
             continue
 
         screen.fill(LIGHT_BG)
+
+        # 난이도별 맵 배경 이미지 (있으면 맵 영역에 깔기)
+        _mbg = get_map_bg(current_difficulty)
+        if _mbg is not None:
+            screen.blit(_mbg, (0, 0))
 
         # 맵 도로망 밑 그리기
         draw_path(screen)
