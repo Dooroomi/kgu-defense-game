@@ -13,6 +13,7 @@ from settings import (
     LIGHT_BG, LIGHT_PATH, DARK_TEXT, SIDEBAR_BG, SIDEBAR_BORDER,
     GOLD, WHITE
 )
+import enemy
 from enemy import Enemy
 from towers import create_tower, Trap
 
@@ -169,6 +170,11 @@ def apply_difficulty(diff):
     WAYPOINTS = PATHS[0]                  # 첫 경로(하위호환/타일 기준)
     settings.PATHS = PATHS
     settings.WAYPOINTS = WAYPOINTS
+    # 하드: 일반 적 체력 배율 (과제 1.5 / 기말고사 1.3 / 논문 1.2배), 그 외 난이도는 1.0
+    if diff == "HARD":
+        enemy.HP_MULT = {"과제": 1.5, "기말고사": 1.3, "논문": 1.2}
+    else:
+        enemy.HP_MULT = {"과제": 1.0, "기말고사": 1.0, "논문": 1.0}
     return DIFFICULTY_STAGES[diff]
 
 

@@ -11,6 +11,9 @@ stun_sound = None
 STUN_COOLDOWN_MS = 4000
 _last_stun_tick = -999999
 
+# 하드 난이도 일반 적별 체력 배율 — main.apply_difficulty가 설정
+HP_MULT = {"과제": 1.0, "기말고사": 1.0, "논문": 1.0}
+
 # 적 애니메이션 스프라이트 및 폰트 지연 로딩 캐시
 enemy_sprites = {}
 name_tag_font = None
@@ -207,6 +210,8 @@ class Enemy:
             self.is_boss = False
             self.color = (220, 20, 60)
 
+        # 하드 난이도: 일반 적별 체력 배율 적용 (보스 제외)
+        hp *= HP_MULT.get(enemy_type, 1.0)
         self.hp = float(hp)
         self.max_health = float(hp)
         self.speed = float(speed)
