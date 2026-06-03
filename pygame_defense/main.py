@@ -410,16 +410,13 @@ def draw_path(screen, diff):
                 screen.blit(ct, (int(_path[i][0] - cw / 2), int(_path[i][1] - ch / 2)))
         return
 
-    # 폴백(EASY 등): 연회색 2중 레이어 도로
+    # 폴백(EASY): 밝은 황토색(연노랑) 단색 흙길 (테두리/점 없이 깔끔한 밴드)
     for _path in PATHS:
         if len(_path) < 2:
             continue
-        pygame.draw.lines(screen, (222, 226, 230), False, _path, 72)
         pygame.draw.lines(screen, LIGHT_PATH, False, _path, 64)
-        pygame.draw.lines(screen, (173, 181, 189), False, _path, 3)
         for wp in _path:
-            pygame.draw.circle(screen, WAYPOINT_COLOR, wp, 10)
-            pygame.draw.circle(screen, DARK_TEXT, wp, 11, 1)
+            pygame.draw.circle(screen, LIGHT_PATH, wp, 32)   # 코너를 같은 색으로 메움
 
 def draw_shop(screen, font, mouse_pos, selected_item, current_stage, rem_enemies_count):
     """
@@ -1527,6 +1524,17 @@ def main():
                     img = frames[idx]
                     rect = img.get_rect(midbottom=(int(fx["x"]), int(fx["y"]) + 28))
                     screen.blit(img, rect)
+
+            elif fx_type == "damage":
+                # 적중 데미지 숫자: 위로 떠오르며 페이드 (이지/하드=흰색, 노멀=검정)
+                init = float(fx.get("initial_duration", 650.0))
+                ratio = max(0.0, min(1.0, duration / init))     # 1 → 0
+                rise = (1.0 - ratio) * 26                        # 위로 떠오름
+                dmg_color = (0, 0, 0) if current_difficulty == "NORMAL" else (255, 255, 255)
+                dmg_font = load_font("cute_font/Maplestory Bold.ttf", 18, bold=True)
+                txt = dmg_font.render(str(int(round(fx["amount"]))), True, dmg_color).convert_alpha()
+                txt.fill((255, 255, 255, int(255 * ratio)), special_flags=pygame.BLEND_RGBA_MULT)
+                screen.blit(txt, txt.get_rect(center=(int(fx["x"]), int(fx["y"] - rise))))
 
             fx["duration"] -= sim_dt  # ms 기반 차감 (배속 반영)
             if fx["duration"] > 0:

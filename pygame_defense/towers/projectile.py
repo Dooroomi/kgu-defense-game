@@ -60,6 +60,20 @@ def load_weapon_frames(weapon_type):
     return frames
 
 
+def _add_damage_text(laser_effects, enemy, amount):
+    """적중한 적 위에 떠오르는 데미지 숫자 이펙트를 추가한다 (색상은 main이 난이도로 결정)."""
+    if laser_effects is None:
+        return
+    laser_effects.append({
+        "type": "damage",
+        "x": float(enemy.x),
+        "y": float(enemy.y) - 18,
+        "amount": float(amount),
+        "duration": 650.0,
+        "initial_duration": 650.0,
+    })
+
+
 def load_americano_frames():
     """
     이전 버전과의 완벽한 호환성을 보장하기 위해 americano_frames를 안전하게 업데이트하는 헬퍼 함수
@@ -124,7 +138,8 @@ class Projectile:
         if distance <= step:
             # 충돌 성공! 주 타겟 데미지 적용
             self.target_enemy.take_damage(self.damage)
-            
+            _add_damage_text(laser_effects, self.target_enemy, self.damage)
+
             # 석사 타워의 책(book) 무기 타격 시: 광역 스플래시 데미지 및 레이저 splash 효과 처리
             if self.weapon_type == "book":
                 splash_radius = 80.0
@@ -134,6 +149,7 @@ class Projectile:
                             dist = math.hypot(other.x - self.target_enemy.x, other.y - self.target_enemy.y)
                             if dist <= splash_radius:
                                 other.take_damage(self.damage)
+                                _add_damage_text(laser_effects, other, self.damage)
                 
                 if laser_effects is not None:
                     laser_effects.append({
