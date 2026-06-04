@@ -59,7 +59,7 @@ class Trap:
     def update(self, enemies, laser_effects, dt=16.667):
         """
         폭발 카운트다운 타이머를 깎고, 시간(3초)이 다 지나면 대폭발을 일으킵니다.
-        적이 닿아도 시간 전에는 터지지 않습니다 — 무조건 타이머가 0이 되어야 폭발.
+        적이 반경 35px 이내로 접근하여 닿는 순간 즉시 폭발하는 판정 로직도 포함합니다.
         dt: 경과 시간(ms). 모든 PC에서 동일한 폭발 타이밍을 보장합니다.
         """
         if not self.is_active:
@@ -67,7 +67,15 @@ class Trap:
 
         self.timer -= dt
 
-        # 타이머가 0 이하가 되면(설치 후 3초 경과) 폭발. 적 접촉으로는 터지지 않음.
+        # 1. 적 충돌 시 즉시 폭발 로직 추가 (충돌 판정 반경 35px)
+        for enemy in enemies:
+            if enemy.is_alive and not enemy.reached_end:
+                distance = math.hypot(enemy.x - self.x, enemy.y - self.y)
+                if distance <= 35.0:
+                    self.explode(enemies, laser_effects)
+                    return
+
+        # 2. 타이머 만료 시 폭발
         if self.timer <= 0:
             self.explode(enemies, laser_effects)
 

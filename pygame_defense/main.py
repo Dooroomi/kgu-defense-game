@@ -130,7 +130,7 @@ def draw_multicolor_title(screen, font, center_x, center_y):
         current_x += surf.get_width()
 
 # 난이도별 시작 자금
-START_MONEY = {"EASY": 15000, "NORMAL": 10000, "HARD": 7000}
+START_MONEY = {"EASY": 15000, "NORMAL": 10000, "HARD": 8000}
 
 # 난이도별 스테이지(웨이브) 데이터 — 난이도마다 몬스터 수/종류가 달라짐
 # EASY: 적게 / NORMAL: 기본(기존 값) / HARD: 많고 빠르게 (스테이지 5 보스 등장은 공통)
@@ -819,6 +819,7 @@ def main():
     spawn_cooldown = 90
     boss_spawn_timer = 10000  # 10초 대기 (10000ms)
     boss_spawned = False
+    boss_spawn_count = 0
 
     # 난이도(이지/노멀/하드) 및 현재 난이도의 스테이지 데이터 (게임 시작 시 교체)
     current_difficulty = "NORMAL"
@@ -884,6 +885,7 @@ def main():
                                 spawn_timer = 0
                                 boss_spawn_timer = 2500  # 2.5초 (2500ms)
                                 boss_spawned = False
+                                boss_spawn_count = 0
                                 victory_triggered = False
                                 gameover_triggered = False
                                 stage_state = "WAITING" # WAITING으로 변경하여 웨이브 대기 상태 진입!
@@ -906,6 +908,30 @@ def main():
                                 spawn_timer = 0
                                 boss_spawn_timer = 2500  # 2.5초 (2500ms)
                                 boss_spawned = False
+                                boss_spawn_count = 0
+                                victory_triggered = False
+                                gameover_triggered = False
+                                stage_state = "WAITING"
+                                play_music("music/boss.mp3")
+                                cheat_input = ""
+
+                            # 이지 보스전 바로 시작 비밀코드 'lovepeace'
+                            elif cheat_input == "lovepeace":
+                                game_state = "PLAYING"
+                                current_difficulty = "EASY"
+                                stage_data = apply_difficulty(current_difficulty)
+                                current_stage = 5
+                                scholarship_points = 150000
+                                enemies = []
+                                towers = []
+                                traps = []
+                                projectiles = []
+                                laser_effects = []
+                                spawn_queue = []
+                                spawn_timer = 0
+                                boss_spawn_timer = 2500  # 2.5초 (2500ms)
+                                boss_spawned = False
+                                boss_spawn_count = 0
                                 victory_triggered = False
                                 gameover_triggered = False
                                 stage_state = "WAITING"
@@ -922,6 +948,7 @@ def main():
                             if current_stage == 5:
                                 boss_spawn_timer = 2500 # 대폭 축소 (2.5초 = 2500ms)
                                 boss_spawned = False
+                                boss_spawn_count = 0
                                 play_music("music/boss.mp3") # 보스전 BGM 재생
             
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -949,6 +976,7 @@ def main():
                             spawn_queue = []
                             spawn_timer = 0
                             boss_spawned = False
+                            boss_spawn_count = 0
                             victory_triggered = False
                             gameover_triggered = False
                             cheat_input = ""
@@ -980,6 +1008,7 @@ def main():
                             spawn_queue = []  # 대기 상태이므로 웨이브 시작 전에는 빈 큐
                             spawn_timer = 0
                             boss_spawned = False
+                            boss_spawn_count = 0
                             victory_triggered = False
                             gameover_triggered = False
                             if current_difficulty == "NORMAL":
@@ -1005,6 +1034,7 @@ def main():
                             spawn_queue = []
                             spawn_timer = 0
                             boss_spawned = False
+                            boss_spawn_count = 0
                             victory_triggered = False
                             cheat_input = ""
                             play_music("music/title_bgm.mp3")
@@ -1029,6 +1059,7 @@ def main():
                             spawn_queue = []
                             spawn_timer = 0
                             boss_spawned = False
+                            boss_spawn_count = 0
                             victory_triggered = False
                             gameover_triggered = False
                             cheat_input = ""
@@ -1080,6 +1111,7 @@ def main():
                             spawn_queue = []
                             spawn_timer = 0
                             boss_spawned = False
+                            boss_spawn_count = 0
                             victory_triggered = False
                             gameover_triggered = False
                             selected_item = None
@@ -1269,8 +1301,21 @@ def main():
                     boss_spawn_timer -= sim_dt  # ms 기반 차감 (배속 반영)
                     if boss_spawn_timer <= 0:
                         boss_type = "악마교수" if current_difficulty == "HARD" else "교수님"
-                        enemies.append(Enemy(boss_type, random.choice(PATHS)))
-                        boss_spawned = True
+                        if current_difficulty == "HARD" and len(PATHS) > 1:
+                            boss_path = PATHS[1]
+                        else:
+                            boss_path = random.choice(PATHS)
+                        
+                        if current_difficulty == "NORMAL":
+                            enemies.append(Enemy(boss_type, boss_path))
+                            boss_spawn_count += 1
+                            if boss_spawn_count >= 2:
+                                boss_spawned = True
+                            else:
+                                boss_spawn_timer = 1500.0  # 1.5초 딜레이
+                        else:
+                            enemies.append(Enemy(boss_type, boss_path))
+                            boss_spawned = True
                 
                 # 스폰 큐가 비었고 최종 보스도 스폰되었으며(5단계의 경우) 화면에 적이 모두 제거되었을 때 클리어 처리
                 elif len(enemies) == 0:
@@ -1286,7 +1331,7 @@ def main():
 
             # 2-1. 모든 적 생명체 좌표 업데이트 (보스 스킬용 타워 리스트 참조 전달)
             for enemy in enemies:
-                enemy.update(towers, sim_dt, enemies=enemies)
+                enemy.update(towers, sim_dt, enemies=enemies, current_difficulty=current_difficulty)
 
             # 2-1-2. 악마교수 소환 스킬 처리 (대기 중인 소환 → 교수님을 '악마교수 주변'에 생성)
             summoned = []
@@ -1351,8 +1396,13 @@ def main():
                     current_credits -= deduct
                     current_credits = round(max(0.0, current_credits), 1)
                 elif not enemy.is_alive:
-                    # 처치 보상 지급 (교수님 2000 / 악마교수 5000). 승리는 '모든 적 처치' 시 판정.
-                    scholarship_points += enemy.reward
+                    # 처치 보상 지급 (교수님 10,000원 / 악마교수 30,000원 / 그 외 일반 적 reward)
+                    if enemy.enemy_type == "교수님":
+                        scholarship_points += 10000
+                    elif enemy.enemy_type in ("악마교수", "악마 교수"):
+                        scholarship_points += 30000
+                    else:
+                        scholarship_points += enemy.reward
                 else:
                     next_enemies.append(enemy)
             enemies = next_enemies
