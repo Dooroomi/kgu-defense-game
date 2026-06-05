@@ -706,6 +706,77 @@ def draw_tower_popup(screen, tower, mouse_pos, scholarship_points):
     screen.blit(sell_label, sell_label.get_rect(center=(sell_btn.centerx, sell_btn.y + 12)))
     screen.blit(sell_value_label, sell_value_label.get_rect(center=(sell_btn.centerx, sell_btn.y + 25)))
 
+def draw_spawn_indicators(screen, paths, current_difficulty):
+    """
+    웨이브 대기 상태일 때, 적 스폰 위치(paths의 각 path[0])에 
+    다음 waypoint(path[1]) 방향을 가리키는 깜빡이고 움직이는 화살표 및 마커를 그립니다.
+    """
+    time_ms = pygame.time.get_ticks()
+    
+    # 1. 깜빡임 및 펄스(움직임) 값 계산
+    pulse = 8 * math.sin(time_ms * 0.01)
+    alpha = int(150 + 105 * math.sin(time_ms * 0.007))
+    
+    # 폰트 로드
+    font = load_font("cute_font/Maplestory Bold.ttf", 12, bold=True)
+    
+    for path in paths:
+        if len(path) < 2:
+            continue
+        
+        p0 = path[0]
+        p1 = path[1]
+        
+        dx = p1[0] - p0[0]
+        dy = p1[1] - p0[1]
+        dist = math.hypot(dx, dy)
+        if dist == 0:
+            continue
+            
+        vx = dx / dist
+        vy = dy / dist
+        angle = math.atan2(dy, dx)
+        
+        # 스폰 지점 마커 (반투명 빨간색 원)
+        marker_surf = pygame.Surface((64, 64), pygame.SRCALPHA)
+        pygame.draw.circle(marker_surf, (255, 50, 50, alpha // 4), (32, 32), 24)
+        pygame.draw.circle(marker_surf, (255, 50, 50, alpha // 2), (32, 32), 16, 2)
+        screen.blit(marker_surf, (p0[0] - 32, p0[1] - 32))
+        
+        # 스폰 텍스트 (SPAWN)
+        text_surf = font.render("SPAWN", True, (255, 50, 50)).convert_alpha()
+        text_surf.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
+        text_rect = text_surf.get_rect(center=(p0[0], p0[1] - 32))
+        screen.blit(text_surf, text_rect)
+        
+        # 화살표 중심점 계산 (스폰 지점에서 약간 앞쪽으로 움직이도록 펄스 적용)
+        center_x = p0[0] + vx * (35 + pulse)
+        center_y = p0[1] + vy * (35 + pulse)
+        
+        # 화살표 다각형 정의 (오른쪽 방향 기준)
+        arrow_local = [
+            (-12, -5),
+            (0, -5),
+            (0, -10),
+            (12, 0),
+            (0, 10),
+            (0, 5),
+            (-12, 5)
+        ]
+        
+        # 회전 및 평행이동
+        arrow_rotated = []
+        cos_a = math.cos(angle)
+        sin_a = math.sin(angle)
+        for lx, ly in arrow_local:
+            wx = lx * cos_a - ly * sin_a + center_x
+            wy = lx * sin_a + ly * cos_a + center_y
+            arrow_rotated.append((wx, wy))
+            
+        # 화살표 그리기
+        pygame.draw.polygon(screen, (255, 50, 50), arrow_rotated)
+        pygame.draw.polygon(screen, (255, 255, 255), arrow_rotated, 1)
+
 def main():
     global current_credits, scholarship_points, path_tile, game_state
     
@@ -1654,6 +1725,10 @@ def main():
         sp_font = load_font("cute_font/Maplestory Bold.ttf", 12, bold=True)
         sp_surf = sp_font.render(sp_label, True, sp_tc)
         screen.blit(sp_surf, sp_surf.get_rect(center=SPEED_BTN_RECT.center))
+
+        # 3-5-3. 적 스폰 위치 표시 마커 UI
+        if stage_state == "WAITING":
+            draw_spawn_indicators(screen, PATHS, current_difficulty)
 
         # 3-6. 준비 기간 알림 깜빡이 텍스트 배너 (라이트 테마 보정)
         if stage_state in ["WAITING", "COMPLETED"]:
