@@ -304,9 +304,14 @@ def is_valid_placement(mx, my, item_type, towers, traps):
     if mx < 40 or mx > MAP_WIDTH - 40 or my < 40 or my > SCREEN_HEIGHT - 40:
         return False
 
-    # 2. 다른 타워와의 충돌 및 오버랩 검증 (최소 거리 64px 필요)
+    # 타워 설치를 위한 64x64 가상의 rect 생성
+    new_rect = pygame.Rect(mx - 32, my - 32, 64, 64)
+    # 충돌 검사 전용으로 상하좌우 크기를 약간 줄인 히트박스 생성
+    new_hitbox = new_rect.inflate(-15, -15)
+
+    # 2. 다른 타워와의 충돌 및 오버랩 검증 (히트박스 축소 검사)
     for t in towers:
-        if math.hypot(mx - t.x, my - t.y) < 64:
+        if new_hitbox.colliderect(t.rect.inflate(-15, -15)):
             return False
 
     # 3. 다른 설치기(트랩)와의 오버랩 검증 (최소 거리 48px 필요)
@@ -319,7 +324,14 @@ def is_valid_placement(mx, my, item_type, towers, traps):
     if item_type != "논문 작성 중인 박사":
         for _path in PATHS:
             for i in range(len(_path) - 1):
-                if dist_to_segment((mx, my), _path[i], _path[i+1]) < 48:
+                p1 = _path[i]
+                p2 = _path[i+1]
+                x_min, x_max = min(p1[0], p2[0]), max(p1[0], p2[0])
+                y_min, y_max = min(p1[1], p2[1]), max(p1[1], p2[1])
+                # 도로 원본 rect (두께 64px)
+                road_rect = pygame.Rect(x_min - 32, y_min - 32, (x_max - x_min) + 64, (y_max - y_min) + 64)
+                # 동일하게 inflate(-15, -15)를 적용하여 판정하여 마진 확보
+                if new_hitbox.colliderect(road_rect.inflate(-15, -15)):
                     return False
                 
     return True
@@ -898,6 +910,7 @@ def main():
 
     # 구매를 위해 상점에서 선택된 현재 타워/트랩 종류 식별 문자열
     selected_item = None
+    selected_tower = None
     
     # 비밀코드(Cheat Code) 입력 문자열
     cheat_input = ""
@@ -1186,6 +1199,7 @@ def main():
                             victory_triggered = False
                             gameover_triggered = False
                             selected_item = None
+                            selected_tower = None
                             game_speed = 1
                             game_state = "PLAYING"
                             if current_difficulty == "NORMAL":
@@ -1198,6 +1212,27 @@ def main():
                                 click_sound.play()
                             
                     elif game_state == "PLAYING":
+                        # Ctrl + 좌클릭 빠른 강화
+                        if pygame.key.get_mods() & pygame.KMOD_CTRL:
+                            clicked_tower = None
+                            for t in towers:
+                                if t.rect.collidepoint((mx, my)):
+                                    clicked_tower = t
+                                    break
+                            if clicked_tower:
+                                if clicked_tower.can_upgrade():
+                                    cost = clicked_tower.get_upgrade_cost()
+                                    if scholarship_points >= cost:
+                                        scholarship_points -= cost
+                                        clicked_tower.upgrade()
+                                        if click_sound:
+                                            click_sound.play()
+                                    else:
+                                        pass
+                                else:
+                                    pass
+                            continue  # Ctrl+좌클릭 처리 후 후속 좌클릭 로직 무시
+
                         # 우측 상단 메뉴 버튼 충돌 감지
                         menu_btn_rect = MENU_BTN_RECT
                         if menu_btn_rect.collidepoint((mx, my)):
@@ -1230,6 +1265,9 @@ def main():
                             elif sell_btn_rect.collidepoint((mx, my)):
                                 # 판매: 환급 후 타워 제거
                                 scholarship_points += sel_tower.get_sell_value()
+                                if sel_tower.is_selected:
+                                    sel_tower.is_selected = False
+                                    selected_tower = None
                                 towers.remove(sel_tower)
                                 if click_sound:
                                     click_sound.play()
@@ -1253,6 +1291,7 @@ def main():
                                         # 상점에서 새로 타워를 고르면 기존에 선택된 타워는 선택 해제
                                         for t in towers:
                                             t.is_selected = False
+                                        selected_tower = None
                                     # 상점 슬롯 클릭 효과음 재생
                                     if click_sound:
                                         click_sound.play()
@@ -1315,17 +1354,35 @@ def main():
                                     # 클릭한 타워 선택 상태 활성화, 다른 타워는 비활성화
                                     for t in towers:
                                         t.is_selected = (t == clicked_tower)
+                                    selected_tower = clicked_tower
                                     if click_sound:
                                         click_sound.play()
                                 else:
                                     # 빈 맵 공간 클릭 시 모든 타워 선택 해제
                                     for t in towers:
                                         t.is_selected = False
+                                    selected_tower = None
                 
-                # 마우스 우클릭 이벤트 처리 (타워 배치 선택 취소)
+                # 마우스 우클릭 이벤트 처리
                 elif event.button == 3:
                     if game_state == "PLAYING":
-                        selected_item = None
+                        # 우클릭 빠른 판매
+                        clicked_tower = None
+                        for t in towers:
+                            if t.rect.collidepoint((mx, my)):
+                                clicked_tower = t
+                                break
+                        if clicked_tower:
+                            scholarship_points += clicked_tower.get_sell_value()
+                            if clicked_tower.is_selected:
+                                clicked_tower.is_selected = False
+                                selected_tower = None
+                            towers.remove(clicked_tower)
+                            if click_sound:
+                                click_sound.play()
+                        else:
+                            # 맵 빈 곳 우클릭 시 타워 배치 선택 취소
+                            selected_item = None
 
         # 승리 상태 감지 시 나레이션 음원 1회 재생 및 BGM 즉각 정지
         if stage_state == "VICTORY" and not victory_triggered:
@@ -1429,6 +1486,9 @@ def main():
                                 "type": "pillar", "x": vt.x, "y": vt.y,
                                 "duration": 700.0, "initial_duration": 700.0,
                             })
+                            if vt.is_selected:
+                                vt.is_selected = False
+                                selected_tower = None
                             towers.remove(vt)
 
             # 2-2. 모든 방어탑 타겟 조준 및 레이저 공격 연산 (학부생 발사체 리스트 전달)
