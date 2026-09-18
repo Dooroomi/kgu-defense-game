@@ -14,8 +14,8 @@ from settings import (
     GOLD, WHITE
 )
 import enemy
-from enemy import Enemy
-from towers import create_tower, Trap
+from enemy import Enemy, load_enemy_data
+from towers import create_tower, Trap, TowerDataManager
 
 # ==============================================================================
 # UI 레이아웃 상수 (상점 슬롯/버튼 - 그리기와 클릭 판정이 동일 좌표 공유)
@@ -240,45 +240,8 @@ def get_victory_ending(credits):
     else:
         return ("졸업 성공!", f"평점 {credits:.1f}(으)로 간신히 졸업합니다.")
 
-# 상점 품목 데이터 구성
-SHOP_ITEMS = [
-    {
-        "name": "학부생",
-        "cost": 1500,
-        "damage": 3,
-        "range": 160,
-        "type": "tower",
-        "color": CYAN,
-        "desc": "단일 공격, 기본적인 방어라인 구축"
-    },
-    {
-        "name": "석사",
-        "cost": 4000,
-        "damage": 5,
-        "range": 195,
-        "type": "tower",
-        "color": PURPLE,
-        "desc": "광역(Splash) 공격, 적 무리 처리용"
-    },
-    {
-        "name": "박사",
-        "cost": 12000,
-        "damage": 25,
-        "range": 260,
-        "type": "tower",
-        "color": PINK,
-        "desc": "강력한 단발 공격, 높은 사거리"
-    },
-    {
-        "name": "논문 작성 중인 박사",
-        "cost": 1500,
-        "damage": 30,
-        "range": 130,
-        "type": "trap",
-        "color": ORANGE,
-        "desc": "설치형 트랩, 3초 후 대폭발"
-    }
-]
+# 상점 품목 데이터 구성 (tower_data.json에서 자동 생성 — TowerDataManager.load() 이후 초기화)
+SHOP_ITEMS = []  # main() 진입 시 TowerDataManager.get_shop_items()로 채워짐
 
 def dist_to_segment(p, v, w):
     """
@@ -798,6 +761,14 @@ def main():
         pygame.mixer.init()
     except Exception as e:
         print(f"Mixer initialization warning: {e}")
+
+    # 1-1. 타워 데이터 매니저 초기화 (tower_data.json → 메모리 캐싱, 최초 1회)
+    TowerDataManager.load()
+    SHOP_ITEMS.clear()
+    SHOP_ITEMS.extend(TowerDataManager.get_shop_items())
+
+    # 1-2. 적 몬스터 데이터 초기화 (enemy_data.json → 메모리 캐싱, 최초 1회)
+    load_enemy_data()
         
     # SCALED: 논리 해상도(1280x720)를 유지하면서 창/전체화면에 맞춰 자동 확대
     # (마우스 좌표도 논리 좌표로 자동 변환됨 → 픽셀아트 또렷)
