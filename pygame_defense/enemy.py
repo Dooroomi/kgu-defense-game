@@ -2,6 +2,7 @@
 import pygame
 import math
 import os
+import json
 from settings import GREEN, RED
 
 # 스턴 효과음 로딩 (믹서 기동 오류 방지를 위해 지연 로드 지원)
@@ -13,6 +14,32 @@ _last_stun_tick = -999999
 
 # 하드 난이도 일반 적별 체력 배율 — main.apply_difficulty가 설정
 HP_MULT = {"과제": 1.0, "기말고사": 1.0, "논문": 1.0}
+
+# 적 스탯 데이터 캐시 (enemy_data.json → 딕셔너리, 최초 1회 로드)
+_enemy_data_cache = None
+
+def load_enemy_data():
+    """
+    enemy_data.json을 파싱하여 메모리에 캐싱합니다 (최초 1회만 디스크 I/O).
+    게임 초기화 시점(main.py)에서 호출해야 합니다.
+    color 배열은 튜플로 변환합니다.
+    """
+    global _enemy_data_cache
+    if _enemy_data_cache is not None:
+        return _enemy_data_cache
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    json_path = os.path.join(base_dir, "enemy_data.json")
+    with open(json_path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    # color를 JSON 배열(list)에서 튜플로 변환 (pygame은 튜플 선호)
+    for key, data in raw.items():
+        if "color" in data:
+            data["color"] = tuple(data["color"])
+
+    _enemy_data_cache = raw
+    return _enemy_data_cache
 
 # 적 애니메이션 스프라이트 및 폰트 지연 로딩 캐시
 enemy_sprites = {}
@@ -161,55 +188,26 @@ def load_demon_boss_assets():
 class Enemy:
     def __init__(self, enemy_type, waypoints):
         """
-        적 몬스터 데이터 모델 초기화
-        :param enemy_type: 적 종류 식별자 (과제, 기말고사, 논문, 교수님)
+        적 몬스터 데이터 모델 초기화 (데이터 주도 설계)
+        :param enemy_type: 적 종류 식별자 (과제, 기말고사, 논문, 교수님, 악마교수)
         :param waypoints: 적이 이동할 (x, y) 좌표 튜플 리스트
         """
         self.enemy_type = enemy_type
         self.waypoints = waypoints
-        
-        # 기획서 및 밸런스 설정에 따른 데이터 세팅
-        if enemy_type == "과제":
-            hp = 10.0
-            speed = 2.0                     # 속도 보통
-            self.reward = 150               # 보상 150원
-            self.is_boss = False
-            self.color = (220, 50, 80)      # 장밋빛 붉은색
-        elif enemy_type == "기말고사":
-            hp = 30.0
-            speed = 3.0                     # 속도 빠름
-            self.reward = 400               # 보상 400원
-            self.is_boss = False
-            self.color = (255, 140, 0)      # 주황색
-        elif enemy_type == "논문":
-            hp = 120.0
-            speed = 1.2                     # 속도 느림
-            self.reward = 1500              # 보상 1500원
-            self.is_boss = False
-            self.color = (138, 43, 226)     # 보라색
-        elif enemy_type == "교수님":
-            hp = 2000.0                     # 보스 체력 2000 상향
-            speed = 0.6                     # 속도 매우 느림
-            self.reward = 10000             # 처치 보상 10000원 (탱키한 미니보스)
-            self.is_boss = True
-            self.color = (139, 0, 0)        # 다크 레드
-            self.stun_triggered_66 = False   # 2/3 체력 스턴 플래그
-            self.stun_triggered_33 = False   # 1/3 체력 스턴 플래그
-            self.stun_triggered_50 = False   # 1/2 체력 스턴 플래그
-        elif enemy_type == "악마교수":
-            hp = 2500.0                     # 하드 전용 보스 (교수님보다 강함)
-            speed = 0.6
-            self.reward = 30000             # 처치 보상 30000원 (최종 보스)
-            self.is_boss = True
-            self.color = (30, 60, 120)      # 어두운 파랑
-            self.stun_triggered_66 = False   # 스킬(소환) 발동 플래그
-            self.stun_triggered_33 = False
-        else:
-            hp = 3.0
-            speed = 2.0
-            self.reward = 1000
-            self.is_boss = False
-            self.color = (220, 20, 60)
+
+        # 캐싱된 enemy_data.json 딕셔너리에서 스탯 조회
+        data = load_enemy_data()
+        stats = data.get(enemy_type, data["_default"])
+
+        hp = float(stats["hp"])
+        speed = float(stats["speed"])
+        self.reward = stats["reward"]
+        self.is_boss = stats["is_boss"]
+        self.color = stats["color"]
+
+        # 보스 전용 스킬 발동 플래그 동적 초기화 (JSON의 boss_stun_flags 배열)
+        for flag_name in stats.get("boss_stun_flags", []):
+            setattr(self, flag_name, False)
 
         # 하드 난이도: 일반 적별 체력 배율 적용 (보스 제외)
         hp *= HP_MULT.get(enemy_type, 1.0)
@@ -226,7 +224,7 @@ class Enemy:
             self.x = 0.0
             self.y = 0.0
             
-        self.radius = 48 if self.is_boss else 24  # 보스 96px / 일반 적 48px
+        self.radius = stats.get("radius", 48 if self.is_boss else 24)
         self.reached_end = False
         self.is_alive = True
         

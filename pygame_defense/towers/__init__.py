@@ -3,7 +3,8 @@
 타워 관련 클래스들을 한곳에서 import 할 수 있게 묶어주는 패키지 초기화 파일.
 
 사용 예시:
-    from towers import create_tower, Trap, Projectile
+    from towers import create_tower, Trap, Projectile, TowerDataManager
+    TowerDataManager.load()                   # 게임 초기화 시 1회 호출
     tower = create_tower("학부생", x, y)   # 한글 이름으로 알맞은 타워 생성
 """
 from .base import Tower
@@ -12,6 +13,7 @@ from .master import MasterTower
 from .phd import PhdTower
 from .trap import Trap
 from .projectile import Projectile, load_americano_frames
+from .tower_data_manager import TowerDataManager
 
 # 상점에서 쓰는 한글 타워 이름 → 실제 클래스 매핑 테이블
 TOWER_CLASSES = {
@@ -40,4 +42,6 @@ __all__ = [
     "load_americano_frames",
     "create_tower",
     "TOWER_CLASSES",
+    "TowerDataManager",
 ]
+

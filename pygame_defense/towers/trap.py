@@ -45,16 +45,20 @@ class Trap:
         :param x: 트랩 배치 x 좌표
         :param y: 트랩 배치 y 좌표
         """
+        # JSON 데이터에서 스탯 로드 (TowerDataManager 캐시 사용, I/O 없음)
+        from .tower_data_manager import TowerDataManager
+        trap_data = TowerDataManager.get_trap_data()
+
         self.x = x
         self.y = y
-        self.explosion_damage = 30.0     # 설치기 폭발 데미지: 30
-        self.trigger_radius = 130.0      # 폭발 사거리 반경 130px (1280 화면 기준)
-        self.cost = 1500                 # 가격 1500원
+        self.explosion_damage = trap_data["explosion_damage"]
+        self.trigger_radius = trap_data["trigger_radius"]
+        self.cost = trap_data["cost"]
         self.color = ORANGE
 
         self.is_active = True            # 트랩의 활성화 여부
         self.radius = 24                 # 시각적 렌더링 반경 (48px)
-        self.timer = 3000                # 3초 뒤에 폭발 (3000ms)
+        self.timer = trap_data["timer"]  # 폭발까지 대기 시간 (ms)
 
     def update(self, enemies, laser_effects, dt=16.667):
         """

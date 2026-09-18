@@ -1,0 +1,51 @@
+{
+    "towers": {
+        "base": {
+            "tower_type": "기본",
+            "base_cost": 1500,
+            "is_aoe": false,
+            "levels": {
+                "1": { "damage": 1.0, "range": 100.0, "fire_rate": 1000, "upgrade_cost": 1000 },
+                "2": { "damage": 2.0, "range": 100.0, "fire_rate": 1000, "upgrade_cost": 2000 },
+                "3": { "damage": 3.0, "range": 100.0, "fire_rate": 1000, "upgrade_cost": 0 }
+            }
+        },
+        "undergraduate": {
+            "tower_type": "학부생",
+            "base_cost": 1500,
+            "is_aoe": false,
+            "levels": {
+                "1": { "damage": 3.0, "range": 160.0, "fire_rate": 1000, "upgrade_cost": 800 },
+                "2": { "damage": 6.0, "range": 160.0, "fire_rate": 1000, "upgrade_cost": 1200 },
+                "3": { "damage": 10.0, "range": 160.0, "fire_rate": 1000, "upgrade_cost": 0 }
+            }
+        },
+        "master": {
+            "tower_type": "석사",
+            "base_cost": 4000,
+            "is_aoe": true,
+            "levels": {
+                "1": { "damage": 5.0, "range": 195.0, "fire_rate": 900, "upgrade_cost": 2000 },
+                "2": { "damage": 9.0, "range": 195.0, "fire_rate": 900, "upgrade_cost": 3000 },
+                "3": { "damage": 15.0, "range": 195.0, "fire_rate": 900, "upgrade_cost": 0 }
+            }
+        },
+        "phd": {
+            "tower_type": "박사",
+            "base_cost": 12000,
+            "is_aoe": false,
+            "levels": {
+                "1": { "damage": 25.0, "range": 260.0, "fire_rate": 800, "upgrade_cost": 6000 },
+                "2": { "damage": 45.0, "range": 260.0, "fire_rate": 800, "upgrade_cost": 10000 },
+                "3": { "damage": 75.0, "range": 260.0, "fire_rate": 800, "upgrade_cost": 0 }
+            }
+        }
+    },
+    "trap": {
+        "tower_type": "논문 작성 중인 박사",
+        "cost": 1500,
+        "explosion_damage": 30.0,
+        "trigger_radius": 130.0,
+        "timer": 3000
+    }
+}

@@ -166,36 +166,33 @@ class Tower:
 
     [강화 시스템]
     - 모든 타워는 1 ~ MAX_LEVEL(3) 단계로 개별 강화됩니다.
-    - 단계별 능력치는 자식 클래스의 LEVEL_DATA 표에서 정의합니다 (공격력 위주 증가).
+    - 단계별 능력치는 tower_data.json에서 로드되어 LEVEL_DATA에 세팅됩니다.
     - 단계별 그림(애니메이션)은 picture/towers/<asset_key>/level<N>/ 에서 로드됩니다.
 
     [자식 클래스가 정의해야 하는 클래스 속성]
         tower_type : 화면 표시용 한글 이름 (예: "학부생")
         asset_key  : 그림 폴더명 (예: "undergraduate")
         color      : 시그니처 색상 (레이저/사거리 표시에 사용)
-        base_cost  : 최초 설치 비용 (판매 환급 계산 기준)
-        is_aoe     : 광역 공격 여부
-        LEVEL_DATA : {레벨: {"damage", "range", "fire_rate", "upgrade_cost"}}
     """
 
     MAX_LEVEL = 3
 
-    # --- 자식 클래스에서 덮어쓰는 기본값들 ---
+    # --- 자식 클래스에서 덮어쓰는 기본값들 (색상/식별 전용, 수치는 JSON에서 로드) ---
     tower_type = "기본"
     asset_key = "base"
     color = GRAY
-    base_cost = 1500
-    is_aoe = False
-    LEVEL_DATA = {
-        1: {"damage": 1.0, "range": 100.0, "fire_rate": 1000, "upgrade_cost": 1000},
-        2: {"damage": 2.0, "range": 100.0, "fire_rate": 1000, "upgrade_cost": 2000},
-        3: {"damage": 3.0, "range": 100.0, "fire_rate": 1000, "upgrade_cost": 0},
-    }
 
     # 애니메이션 프레임 전환 속도 (ms/프레임)
     anim_speed = 120
 
     def __init__(self, x, y):
+        # JSON 데이터에서 스탯 로드 (TowerDataManager 캐시 사용, I/O 없음)
+        from .tower_data_manager import TowerDataManager
+        data = TowerDataManager.get_tower_data(self.asset_key)
+        self.base_cost = data["base_cost"]
+        self.is_aoe = data["is_aoe"]
+        self.LEVEL_DATA = TowerDataManager.get_tower_level_data_dict(self.asset_key)
+
         self.x = x
         self.y = y
         self.width = 64
